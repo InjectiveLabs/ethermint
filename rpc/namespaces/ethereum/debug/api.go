@@ -18,6 +18,7 @@ package debug
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"runtime"
@@ -37,6 +38,7 @@ import (
 	"cosmossdk.io/log"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/consensus/ethash"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/evmos/ethermint/rpc/backend"
 	rpctypes "github.com/evmos/ethermint/rpc/types"
@@ -338,6 +340,16 @@ func (a *API) PrintBlock(number uint64) (string, error) {
 	}
 
 	return spew.Sdump(block), nil
+}
+
+// SeedHash retrieves the seed hash of a block.
+func (a *API) SeedHash(number uint64) (string, error) {
+	_, err := a.backend.HeaderByNumber(rpctypes.BlockNumber(number))
+	if err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("0x%x", ethash.SeedHash(number)), nil
 }
 
 // IntermediateRoots executes a block, and returns a list

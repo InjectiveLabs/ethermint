@@ -144,7 +144,9 @@ func (suite *KeeperTestSuite) TestGetAccountStorage() {
 }
 
 func (suite *KeeperTestSuite) TestGetAccountOrEmpty() {
-	empty := statedb.NewEmptyAccount()
+	empty := statedb.Account{
+		CodeHash: types.EmptyCodeHash,
+	}
 
 	supply := big.NewInt(100)
 
@@ -174,9 +176,9 @@ func (suite *KeeperTestSuite) TestGetAccountOrEmpty() {
 			suite.SetupTest()
 			res := suite.App.EvmKeeper.GetAccountOrEmpty(suite.Ctx, tc.addr())
 			if tc.expEmpty {
-				suite.Require().Equal(*empty, res)
+				suite.Require().Equal(empty, res)
 			} else {
-				suite.Require().NotEqual(*empty, res)
+				suite.Require().NotEqual(empty, res)
 			}
 		})
 	}

@@ -13,11 +13,9 @@ import (
 	authsigning "github.com/cosmos/cosmos-sdk/x/auth/signing"
 	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
-	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/tracing"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -58,11 +56,11 @@ func (suite *StateDBTestSuite) TestCreateAccount() {
 			"reset account (keep balance)",
 			suite.Address,
 			func(vmdb vm.StateDB, addr common.Address) {
-				vmdb.AddBalance(addr, uint256.NewInt(100), tracing.BalanceChangeUnspecified)
-				suite.Require().NotZero(vmdb.GetBalance(addr))
+				vmdb.AddBalance(addr, big.NewInt(100))
+				suite.Require().NotZero(vmdb.GetBalance(addr).Int64())
 			},
 			func(vmdb vm.StateDB, addr common.Address) {
-				suite.Require().Equal(vmdb.GetBalance(addr), uint256.NewInt(100))
+				suite.Require().Equal(vmdb.GetBalance(addr).Int64(), int64(100))
 			},
 		},
 		{
@@ -109,16 +107,13 @@ func (suite *StateDBTestSuite) TestAddBalance() {
 		suite.Run(tc.name, func() {
 			vmdb := suite.StateDB()
 			prev := vmdb.GetBalance(suite.Address)
-			vmdb.AddBalance(suite.Address, uint256.MustFromBig(tc.amount), tracing.BalanceChangeUnspecified)
+			vmdb.AddBalance(suite.Address, tc.amount)
 			post := vmdb.GetBalance(suite.Address)
 
 			if tc.isNoOp {
-				suite.Require().Equal(prev, post)
+				suite.Require().Equal(prev.Int64(), post.Int64())
 			} else {
-				suite.Require().Equal(
-					new(uint256.Int).Add(prev, uint256.MustFromBig(tc.amount)),
-					post,
-				)
+				suite.Require().Equal(new(big.Int).Add(prev, tc.amount).Int64(), post.Int64())
 			}
 		})
 	}
@@ -141,7 +136,7 @@ func (suite *StateDBTestSuite) TestSubBalance() {
 			"positive amount, above zero",
 			big.NewInt(50),
 			func(vmdb vm.StateDB) {
-				vmdb.AddBalance(suite.Address, uint256.NewInt(100), tracing.BalanceChangeUnspecified)
+				vmdb.AddBalance(suite.Address, big.NewInt(100))
 			},
 			false,
 		},
@@ -159,16 +154,13 @@ func (suite *StateDBTestSuite) TestSubBalance() {
 			tc.malleate(vmdb)
 
 			prev := vmdb.GetBalance(suite.Address)
-			vmdb.SubBalance(suite.Address, uint256.MustFromBig(tc.amount), tracing.BalanceChangeUnspecified)
+			vmdb.SubBalance(suite.Address, tc.amount)
 			post := vmdb.GetBalance(suite.Address)
 
 			if tc.isNoOp {
-				suite.Require().Equal(prev, post)
+				suite.Require().Equal(prev.Int64(), post.Int64())
 			} else {
-				suite.Require().Equal(
-					new(uint256.Int).Sub(prev, uint256.MustFromBig(tc.amount)),
-					post,
-				)
+				suite.Require().Equal(new(big.Int).Sub(prev, tc.amount).Int64(), post.Int64())
 			}
 		})
 	}
@@ -491,10 +483,10 @@ func (suite *StateDBTestSuite) TestSuicide() {
 	}
 
 	// Call Suicide
-	db.SelfDestruct(suite.Address)
+	suite.Require().Equal(true, db.Suicide(suite.Address))
 
 	// Check suicided is marked
-	suite.Require().Equal(true, db.HasSelfDestructed(suite.Address))
+	suite.Require().Equal(true, db.HasSuicided(suite.Address))
 
 	// Commit state
 	suite.Require().NoError(db.Commit())
@@ -515,7 +507,7 @@ func (suite *StateDBTestSuite) TestSuicide() {
 
 	// Check code is still present in addr2 and suicided is false
 	suite.Require().NotNil(db.GetCode(addr2))
-	suite.Require().Equal(false, db.HasSelfDestructed(addr2))
+	suite.Require().Equal(false, db.HasSuicided(addr2))
 }
 
 func (suite *StateDBTestSuite) TestExist() {
@@ -527,7 +519,7 @@ func (suite *StateDBTestSuite) TestExist() {
 	}{
 		{"success, account exists", suite.Address, func(vm.StateDB) {}, true},
 		{"success, has suicided", suite.Address, func(vmdb vm.StateDB) {
-			vmdb.SelfDestruct(suite.Address)
+			vmdb.Suicide(suite.Address)
 		}, true},
 		{"success, account doesn't exist", tests.GenerateAddress(), func(vm.StateDB) {}, false},
 	}
@@ -553,9 +545,7 @@ func (suite *StateDBTestSuite) TestEmpty() {
 		{
 			"not empty, positive balance",
 			suite.Address,
-			func(vmdb vm.StateDB) {
-				vmdb.AddBalance(suite.Address, uint256.NewInt(100), tracing.BalanceChangeUnspecified)
-			},
+			func(vmdb vm.StateDB) { vmdb.AddBalance(suite.Address, big.NewInt(100)) },
 			false,
 		},
 		{"empty, account doesn't exist", tests.GenerateAddress(), func(vm.StateDB) {}, true},

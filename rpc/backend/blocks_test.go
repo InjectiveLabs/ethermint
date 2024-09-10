@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/trie"
 	"google.golang.org/grpc/metadata"
 
 	"github.com/evmos/ethermint/rpc/backend/mocks"
@@ -1177,12 +1178,7 @@ func (suite *BackendTestSuite) TestEthMsgsFromTendermintBlock() {
 			suite.SetupTest() // reset test and queries
 
 			msgs := suite.backend.EthMsgsFromTendermintBlock(tc.resBlock, tc.blockRes)
-
-			suite.Require().Equal(len(tc.expMsgs), len(msgs))
-
-			for i, m := range msgs {
-				suite.Require().Equal(tc.expMsgs[i].Raw.Hash(), m.Hash())
-			}
+			suite.Require().Equal(tc.expMsgs, msgs)
 		})
 	}
 }
@@ -1454,14 +1450,16 @@ func (suite *BackendTestSuite) TestEthBlockByNumber() {
 				baseFee := sdkmath.NewInt(1)
 				RegisterBaseFee(queryClient, baseFee)
 			},
-			ethtypes.NewBlockWithHeader(
+			ethtypes.NewBlock(
 				ethrpc.EthHeaderFromTendermint(
 					emptyBlock.Header,
 					ethtypes.Bloom{},
 					sdkmath.NewInt(1).BigInt(),
 				),
-			).WithBody(
-				ethtypes.Body{Transactions: []*ethtypes.Transaction{}},
+				[]*ethtypes.Transaction{},
+				nil,
+				nil,
+				nil,
 			),
 			true,
 		},
@@ -1478,14 +1476,16 @@ func (suite *BackendTestSuite) TestEthBlockByNumber() {
 				baseFee := sdkmath.NewInt(1)
 				RegisterBaseFee(queryClient, baseFee)
 			},
-			ethtypes.NewBlockWithHeader(
+			ethtypes.NewBlock(
 				ethrpc.EthHeaderFromTendermint(
 					emptyBlock.Header,
 					ethtypes.Bloom{},
 					sdkmath.NewInt(1).BigInt(),
 				),
-			).WithBody(
-				ethtypes.Body{Transactions: []*ethtypes.Transaction{msgEthereumTx.AsTransaction()}},
+				[]*ethtypes.Transaction{msgEthereumTx.AsTransaction()},
+				nil,
+				nil,
+				trie.NewStackTrie(nil),
 			),
 			true,
 		},
@@ -1544,14 +1544,16 @@ func (suite *BackendTestSuite) TestEthBlockFromTendermintBlock() {
 				queryClient := suite.backend.queryClient.QueryClient.(*mocks.EVMQueryClient)
 				RegisterBaseFee(queryClient, baseFee)
 			},
-			ethtypes.NewBlockWithHeader(
+			ethtypes.NewBlock(
 				ethrpc.EthHeaderFromTendermint(
 					emptyBlock.Header,
 					ethtypes.Bloom{},
 					sdkmath.NewInt(1).BigInt(),
 				),
-			).WithBody(
-				ethtypes.Body{Transactions: []*ethtypes.Transaction{}},
+				[]*ethtypes.Transaction{},
+				nil,
+				nil,
+				nil,
 			),
 			true,
 		},
@@ -1577,14 +1579,16 @@ func (suite *BackendTestSuite) TestEthBlockFromTendermintBlock() {
 				queryClient := suite.backend.queryClient.QueryClient.(*mocks.EVMQueryClient)
 				RegisterBaseFee(queryClient, baseFee)
 			},
-			ethtypes.NewBlockWithHeader(
+			ethtypes.NewBlock(
 				ethrpc.EthHeaderFromTendermint(
 					emptyBlock.Header,
 					ethtypes.Bloom{},
 					sdkmath.NewInt(1).BigInt(),
 				),
-			).WithBody(
-				ethtypes.Body{Transactions: []*ethtypes.Transaction{msgEthereumTx.AsTransaction()}},
+				[]*ethtypes.Transaction{msgEthereumTx.AsTransaction()},
+				nil,
+				nil,
+				trie.NewStackTrie(nil),
 			),
 			true,
 		},

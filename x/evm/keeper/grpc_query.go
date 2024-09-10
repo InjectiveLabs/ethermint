@@ -25,7 +25,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/eth/tracers"
 	"github.com/ethereum/go-ethereum/eth/tracers/logger"
-	"github.com/ethereum/go-ethereum/eth/tracers/native"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -483,11 +482,8 @@ func (k Keeper) TraceTx(c context.Context, req *types.QueryTraceTxRequest) (*typ
 		req,
 		k,
 		func(ctx sdk.Context, cfg *EVMConfig) (*core.Message, error) {
-			signer := ethtypes.MakeSigner(cfg.ChainConfig, big.NewInt(ctx.BlockHeight()), cfg.BlockTime)
-
-			// XXX @@@ TODO: use config to create tracer
-			cfg.Tracer, _ = native.NewNoopTracer(&tracers.Context{}, nil)
-
+			signer := ethtypes.MakeSigner(cfg.ChainConfig, big.NewInt(ctx.BlockHeight()))
+			cfg.Tracer = types.NewNoOpTracer()
 			for i, tx := range req.Predecessors {
 				ethTx := tx.AsTransaction()
 				msg, err := core.TransactionToMessage(ethTx, signer, cfg.BaseFee)
@@ -554,7 +550,7 @@ func (k Keeper) TraceBlock(c context.Context, req *types.QueryTraceBlockRequest)
 	if err != nil {
 		return nil, status.Error(codes.Internal, "failed to load evm config")
 	}
-	signer := ethtypes.MakeSigner(cfg.ChainConfig, big.NewInt(ctx.BlockHeight()), cfg.BlockTime)
+	signer := ethtypes.MakeSigner(cfg.ChainConfig, big.NewInt(ctx.BlockHeight()))
 	txsLength := len(req.Txs)
 	results := make([]*types.TxTraceResult, 0, txsLength)
 
@@ -634,7 +630,7 @@ func (k *Keeper) prepareTrace(
 	txConfig := cfg.TxConfig
 	// Assemble the structured logger or the JavaScript tracer
 	var (
-		tracer    *tracers.Tracer
+		tracer    tracers.Tracer
 		overrides *ethparams.ChainConfig
 		err       error
 		timeout   = defaultTraceTimeout
@@ -658,12 +654,7 @@ func (k *Keeper) prepareTrace(
 		Overrides:        overrides,
 	}
 
-	logger := logger.NewStructLogger(&logConfig)
-	tracer = &tracers.Tracer{
-		Hooks:     logger.Hooks(),
-		GetResult: logger.GetResult,
-		Stop:      logger.Stop,
-	}
+	tracer = logger.NewStructLogger(&logConfig)
 
 	txIndex, err := ethermint.SafeInt(txConfig.TxIndex)
 	if err != nil {
@@ -680,11 +671,9 @@ func (k *Keeper) prepareTrace(
 		if traceConfig.TracerJsonConfig != "" {
 			cfg = json.RawMessage(traceConfig.TracerJsonConfig)
 		}
-		t, err := tracers.DefaultDirectory.New(traceConfig.Tracer, tCtx, cfg)
-		if err != nil {
+		if tracer, err = tracers.DefaultDirectory.New(traceConfig.Tracer, tCtx, cfg); err != nil {
 			return nil, 0, status.Error(codes.Internal, err.Error())
 		}
-		tracer = t
 	}
 
 	// Define a meaningful timeout of a single transaction trace

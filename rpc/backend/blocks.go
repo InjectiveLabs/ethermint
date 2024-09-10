@@ -28,6 +28,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/trie"
 	rpctypes "github.com/evmos/ethermint/rpc/types"
 	evmtypes "github.com/evmos/ethermint/x/evm/types"
 	"github.com/pkg/errors"
@@ -511,7 +512,6 @@ func (b *Backend) EthBlockFromTendermintBlock(
 	}
 
 	// TODO: add tx receipts
-	ethBlock := ethtypes.NewBlockWithHeader(ethHeader).WithBody(ethtypes.Body{Transactions: txs})
-
+	ethBlock := ethtypes.NewBlock(ethHeader, txs, nil, nil, trie.NewStackTrie(nil))
 	return ethBlock, nil
 }
