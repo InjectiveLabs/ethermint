@@ -16,9 +16,13 @@
 package types
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
+	"regexp"
 	"strconv"
 
+	errorsmod "cosmossdk.io/errors"
 	abci "github.com/cometbft/cometbft/abci/types"
 	tmrpctypes "github.com/cometbft/cometbft/rpc/core/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -27,56 +31,24 @@ import (
 	evmtypes "github.com/evmos/ethermint/x/evm/types"
 )
 
-// EventFormat is the format version of the events.
-//
-// To fix the issue of tx exceeds block gas limit, we changed the event format in a breaking way.
-// But to avoid forcing clients to re-sync from scatch, we make json-rpc logic to be compatible with both formats.
-type EventFormat int
-
-const (
-	eventFormatUnknown EventFormat = iota
-
-	// Event Format 1 (the format used before PR #1062):
-	// ```
-	// ethereum_tx(amount, ethereumTxHash, [txIndex, txGasUsed], txHash, [receipient], ethereumTxFailed)
-	// tx_log(txLog, txLog, ...)
-	// ethereum_tx(amount, ethereumTxHash, [txIndex, txGasUsed], txHash, [receipient], ethereumTxFailed)
-	// tx_log(txLog, txLog, ...)
-	// ...
-	// ```
-	eventFormat1
-
-	// Event Format 2 (the format used after PR #1062):
-	// ```
-	// ethereum_tx(ethereumTxHash, txIndex)
-	// ethereum_tx(ethereumTxHash, txIndex)
-	// ...
-	// ethereum_tx(amount, ethereumTxHash, txIndex, txGasUsed, txHash, [receipient], ethereumTxFailed)
-	// tx_log(txLog, txLog, ...)
-	// ethereum_tx(amount, ethereumTxHash, txIndex, txGasUsed, txHash, [receipient], ethereumTxFailed)
-	// tx_log(txLog, txLog, ...)
-	// ...
-	// ```
-	// If the transaction exceeds block gas limit, it only emits the first part.
-	eventFormat2
-)
-
-// ParsedTx is the tx infos parsed from events.
+// ParsedTx is the tx infos parsed from events (success) or log field (failure).
 type ParsedTx struct {
 	MsgIndex int
 
-	// the following fields are parsed from events
-
-	Hash common.Hash
-	// -1 means uninitialized
+	Hash       common.Hash
 	EthTxIndex int32
 	GasUsed    uint64
 	Failed     bool
 }
 
+const EthTxIndexUnitialized int32 = -1
+
 // NewParsedTx initialize a ParsedTx
 func NewParsedTx(msgIndex int) ParsedTx {
-	return ParsedTx{MsgIndex: msgIndex, EthTxIndex: -1}
+	return ParsedTx{
+		MsgIndex:   msgIndex,
+		EthTxIndex: EthTxIndexUnitialized,
+	}
 }
 
 // ParsedTxs is the tx infos parsed from eth tx events.
@@ -87,67 +59,50 @@ type ParsedTxs struct {
 	TxHashes map[common.Hash]int
 }
 
-// ParseTxResult parse eth tx infos from cosmos-sdk events.
-// It supports two event formats, the formats are described in the comments of the format constants.
+// ParseTxResult parse eth tx infos from ABCI TxResult.
+// Uses info from events (success) or log field (failure).
 func ParseTxResult(result *abci.ExecTxResult, tx sdk.Tx) (*ParsedTxs, error) {
-	format := eventFormatUnknown
-	// the index of current ethereum_tx event in format 1 or the second part of format 2
-	eventIndex := -1
-
 	p := &ParsedTxs{
 		TxHashes: make(map[common.Hash]int),
 	}
+
 	for _, event := range result.Events {
 		if event.Type != evmtypes.EventTypeEthereumTx {
 			continue
 		}
 
-		if format == eventFormatUnknown {
-			// discover the format version by inspect the first ethereum_tx event.
-			if len(event.Attributes) > 2 {
-				format = eventFormat1
-			} else {
-				format = eventFormat2
-			}
-		}
-
-		if len(event.Attributes) == 2 {
-			// the first part of format 2
-			if err := p.newTx(event.Attributes); err != nil {
-				return nil, err
-			}
-		} else {
-			// format 1 or second part of format 2
-			eventIndex++
-			if format == eventFormat1 {
-				// append tx
-				if err := p.newTx(event.Attributes); err != nil {
-					return nil, err
-				}
-			} else {
-				// the second part of format 2, update tx fields
-				if err := p.updateTx(eventIndex, event.Attributes); err != nil {
-					return nil, err
-				}
-			}
+		if err := p.parseTxFromEvent(event.Attributes); err != nil {
+			return nil, err
 		}
 	}
 
-	// some old versions miss some events, fill it with tx result
-	if len(p.Txs) == 1 {
-		p.Txs[0].GasUsed = uint64(result.GasUsed)
+	if result.Code != abci.CodeTypeOK && result.Codespace == evmtypes.ModuleName {
+		for i := 0; i < len(p.Txs); i++ {
+			// fail all evm txns in the tx result
+			p.Txs[i].Failed = true
+		}
+
+		if err := p.parseFromLog(result.Log); err != nil {
+			return nil, err
+		}
+
+		return p, nil
 	}
 
-	// this could only happen if tx exceeds block gas limit
-	if result.Code != 0 && tx != nil {
+	// if namespace is not evm, assume block gas limit is reached
+	//
+	// TODO: proper code matching
+	if result.Code != abci.CodeTypeOK && result.Codespace != evmtypes.ModuleName && tx != nil {
 		for i := 0; i < len(p.Txs); i++ {
 			p.Txs[i].Failed = true
-
 			// replace gasUsed with gasLimit because that's what's actually deducted.
+			//
+			// TODO: check  if this is still correct
 			gasLimit := tx.GetMsgs()[i].(*evmtypes.MsgEthereumTx).GetGas()
 			p.Txs[i].GasUsed = gasLimit
 		}
 	}
+
 	return p, nil
 }
 
@@ -174,33 +129,64 @@ func ParseTxIndexerResult(txResult *tmrpctypes.ResultTx, tx sdk.Tx, getter func(
 	}, nil
 }
 
-// newTx parse a new tx from events, called during parsing.
-func (p *ParsedTxs) newTx(attrs []abci.EventAttribute) error {
+// parseTxFromEvent parses a new tx from event attrs.
+func (p *ParsedTxs) parseTxFromEvent(attrs []abci.EventAttribute) error {
 	msgIndex := len(p.Txs)
 	tx := NewParsedTx(msgIndex)
+
 	if err := fillTxAttributes(&tx, attrs); err != nil {
 		return err
 	}
+
 	p.Txs = append(p.Txs, tx)
 	p.TxHashes[tx.Hash] = msgIndex
 	return nil
 }
 
-// updateTx updates an exiting tx from events, called during parsing.
-// In event format 2, we update the tx with the attributes of the second `ethereum_tx` event,
-// Due to bug https://github.com/evmos/ethermint/issues/1175, the first `ethereum_tx` event may emit incorrect tx hash,
-// so we prefer the second event and override the first one.
-func (p *ParsedTxs) updateTx(eventIndex int, attrs []abci.EventAttribute) error {
-	tx := NewParsedTx(eventIndex)
-	if err := fillTxAttributes(&tx, attrs); err != nil {
+type abciLogVmError struct {
+	Hash    string `json:"tx_hash"`
+	GasUsed uint64 `json:"gas_used"`
+	Reason  string `json:"reason,omitempty"`
+	VmError string `json:"vm_error"`
+	Ret     []byte `json:"ret,omitempty"`
+}
+
+// ugly hacks ahead... thanks to errors.Wrapf in BaseApp
+var msgErrJSONRx = regexp.MustCompile(`failed to execute message; message index: (\d+): (.*)`)
+
+// newTx parse a new tx from events, called during parsing.
+func (p *ParsedTxs) parseFromLog(logText string) error {
+	var vmErr abciLogVmError
+
+	parts := msgErrJSONRx.FindStringSubmatch(logText)
+	if len(parts) != 3 {
+		return errors.New("failed to locate message error in abci log")
+	}
+
+	// parts[0] is the whole match
+	msgIndexStr := parts[1]
+	msgIndex, err := strconv.Atoi(msgIndexStr)
+	if err != nil {
+		return errorsmod.Wrap(err, "failed to parse message index as int")
+	}
+
+	logJSON := parts[2]
+	if err := json.Unmarshal([]byte(logJSON), &vmErr); err != nil {
+		err = errorsmod.Wrap(err, "failed to parse abci log as JSON")
 		return err
 	}
-	if tx.Hash != p.Txs[eventIndex].Hash {
-		// if hash is different, index the new one too
-		p.TxHashes[tx.Hash] = eventIndex
+
+	txHash := common.HexToHash(vmErr.Hash)
+	parsedTx := ParsedTx{
+		MsgIndex:   msgIndex,
+		Hash:       txHash,
+		EthTxIndex: EthTxIndexUnitialized,
+		GasUsed:    vmErr.GasUsed,
+		Failed:     true,
 	}
-	// override the tx because the second event is more trustworthy
-	p.Txs[eventIndex] = tx
+
+	p.Txs = append(p.Txs, parsedTx)
+	p.TxHashes[txHash] = msgIndex
 	return nil
 }
 

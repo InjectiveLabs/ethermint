@@ -16,6 +16,7 @@
 package types
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -118,15 +119,160 @@ var (
 	ErrInvalidGasLimit = errorsmod.Register(ModuleName, codeErrInvalidGasLimit, "invalid gas limit")
 )
 
+// VmError is an interface that represents a reverted or failed EVM execution.
+// The Ret() method returns the revert reason bytes associated with the error, if any.
+// The Cause() method returns the unwrapped error. For ABCIInfo integration.
+type VmError interface {
+	String() string
+	Cause() error
+	Error() string
+	VmError() string
+	Ret() []byte
+}
+
+type vmErrorWithRet struct {
+	cause   error
+	vmErr   string
+	ret     []byte
+	hash    string
+	gasUsed uint64
+
+	// derived data
+
+	err    error
+	reason string
+}
+
+// Ret returns the revert reason bytes associated with the VmError.
+func (e *vmErrorWithRet) Ret() []byte {
+	if e == nil {
+		return nil
+	}
+
+	return e.ret
+}
+
+// VmError returns the VM error string associated with the VmError.
+func (e *vmErrorWithRet) VmError() string {
+	if e == nil {
+		return ""
+	}
+
+	return e.vmErr
+}
+
+// Reason returns the reason string associated with the VmError.
+func (e *vmErrorWithRet) Reason() string {
+	if e == nil {
+		return ""
+	}
+
+	return e.reason
+}
+
+// Cause returns the module-level error that can be used for ABCIInfo integration.
+func (e *vmErrorWithRet) Cause() error {
+	if e == nil {
+		return nil
+	}
+
+	return e.cause
+}
+
+type abciLogVmError struct {
+	Hash    string `json:"tx_hash"`
+	GasUsed uint64 `json:"gas_used"`
+	Reason  string `json:"reason,omitempty"`
+	VmError string `json:"vm_error"`
+	Ret     []byte `json:"ret,omitempty"`
+}
+
+// String returns a human-readable string of the error. Includes revert reason if available.
+func (e *vmErrorWithRet) String() string {
+	if e == nil || e.err == nil {
+		return ""
+	}
+
+	return e.err.Error()
+}
+
+// Error returns a JSON-encoded string representation of the VmErrorWithRet.
+// This includes the transaction hash, gas used, revert reason (if available),
+// and the VM error that occurred. For integration with ABCIInfo.
+func (e *vmErrorWithRet) Error() string {
+	if e == nil {
+		return ""
+	}
+
+	return e.toJSON()
+}
+
+func (e *vmErrorWithRet) toJSON() string {
+	logData := &abciLogVmError{
+		Hash:    e.hash,
+		GasUsed: e.gasUsed,
+		Reason:  e.reason,
+		VmError: e.vmErr,
+		Ret:     e.ret,
+	}
+
+	logStr, marshalError := json.Marshal(logData)
+	if marshalError != nil {
+		// fallback to the original error as text
+		// we cannot handle error in this flow, nor panic
+		return e.err.Error()
+	}
+
+	return string(logStr)
+}
+
+// NewVmErrorWithRet creates a new VmError augmented with the revert reason bytes.
+// cause is the module-level error that can be used for ABCIInfo integration.
+// vmErr is the VM error string associated with the VmError.
+// ret is the revert reason bytes associated with the VmError (only if the VM error is ErrExecutionReverted).
+func NewVmErrorWithRet(
+	vmErr string,
+	ret []byte,
+	hash string,
+	gasUsed uint64,
+) VmError {
+	e := &vmErrorWithRet{
+		vmErr:   vmErr,
+		hash:    hash,
+		gasUsed: gasUsed,
+	}
+
+	if e.vmErr == vm.ErrExecutionReverted.Error() {
+		e.err = vm.ErrExecutionReverted
+
+		// store only if the VM error is ErrExecutionReverted
+		e.ret = common.CopyBytes(ret)
+
+		reason, errUnpack := abi.UnpackRevert(e.ret)
+		if errUnpack == nil {
+			e.err = fmt.Errorf("%s: %s", e.err.Error(), reason)
+			e.reason = reason
+			e.cause = errorsmod.Wrap(ErrExecutionReverted, e.toJSON())
+		}
+	} else {
+		e.err = errors.New(e.vmErr)
+		e.cause = errorsmod.Wrap(ErrVMExecution, e.toJSON())
+	}
+
+	return e
+}
+
 // NewExecErrorWithReason unpacks the revert return bytes and returns a wrapped error
 // with the return reason.
 func NewExecErrorWithReason(revertReason []byte) *RevertError {
 	result := common.CopyBytes(revertReason)
 	reason, errUnpack := abi.UnpackRevert(result)
-	err := errors.New("execution reverted")
+
+	err := vm.ErrExecutionReverted
 	if errUnpack == nil {
-		err = fmt.Errorf("execution reverted: %v", reason)
+		err = fmt.Errorf("%s: %v", err.Error(), reason)
 	}
+
 	return &RevertError{
 		error:  err,
 		reason: hexutil.Encode(result),

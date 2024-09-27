@@ -292,7 +292,7 @@ func DefaultJSONRPCConfig() *JSONRPCConfig {
 		HTTPIdleTimeout:          DefaultHTTPIdleTimeout,
 		AllowUnprotectedTxs:      DefaultAllowUnprotectedTxs,
 		MaxOpenConnections:       DefaultMaxOpenConnections,
-		EnableIndexer:            false,
+		EnableIndexer:            true,
 		AllowIndexerGap:          true,
 		MetricsAddress:           DefaultJSONRPCMetricsAddress,
 		FixRevertGasRefundHeight: DefaultFixRevertGasRefundHeight,

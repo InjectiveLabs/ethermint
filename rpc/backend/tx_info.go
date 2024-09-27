@@ -19,6 +19,7 @@ import (
 	"fmt"
 
 	errorsmod "cosmossdk.io/errors"
+	abci "github.com/cometbft/cometbft/abci/types"
 	tmrpcclient "github.com/cometbft/cometbft/rpc/client"
 	tmrpctypes "github.com/cometbft/cometbft/rpc/core/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -156,7 +157,7 @@ func (b *Backend) GetTransactionReceipt(hash common.Hash) (map[string]interface{
 	}
 	tx, err := b.clientCtx.TxConfig.TxDecoder()(resBlock.Block.Txs[res.TxIndex])
 	if err != nil {
-		b.logger.Debug("decoding failed", "error", err.Error())
+		b.logger.Warn("decoding failed", "error", err.Error())
 		return nil, fmt.Errorf("failed to decode tx: %w", err)
 	}
 	ethMsg := tx.GetMsgs()[res.MsgIndex].(*evmtypes.MsgEthereumTx)
@@ -170,7 +171,7 @@ func (b *Backend) GetTransactionReceipt(hash common.Hash) (map[string]interface{
 	cumulativeGasUsed := uint64(0)
 	blockRes, err := b.TendermintBlockResultByNumber(&res.Height)
 	if err != nil {
-		b.logger.Debug("failed to retrieve block results", "height", res.Height, "error", err.Error())
+		b.logger.Warn("failed to retrieve block results", "height", res.Height, "error", err.Error())
 		return nil, nil
 	}
 	for _, txResult := range blockRes.TxsResults[0:res.TxIndex] {
@@ -202,7 +203,7 @@ func (b *Backend) GetTransactionReceipt(hash common.Hash) (map[string]interface{
 		uint64(blockRes.Height),
 	)
 	if err != nil {
-		b.logger.Debug("failed to parse logs", "hash", hash, "error", err.Error())
+		b.logger.Warn("failed to parse logs", "hash", hash, "error", err.Error())
 	}
 
 	if res.EthTxIndex == -1 {
@@ -317,6 +318,7 @@ func (b *Backend) GetTxByEthHash(hash common.Hash) (*ethermint.TxResult, error) 
 	}
 
 	// fallback to tendermint tx indexer
+	b.logger.Warn("fallback to tendermint tx indexer! failed txns will not be available", "tx", hash.Hex())
 	query := fmt.Sprintf("%s.%s='%s'", evmtypes.TypeMsgEthereumTx, evmtypes.AttributeKeyEthereumTxHash, hash.Hex())
 	txResult, err := b.queryTendermintTxIndexer(query, func(txs *rpctypes.ParsedTxs) *rpctypes.ParsedTx {
 		return txs.GetTxByHash(hash)
@@ -334,6 +336,7 @@ func (b *Backend) GetTxByTxIndex(height int64, index uint) (*ethermint.TxResult,
 	}
 
 	// fallback to tendermint tx indexer
+	b.logger.Warn("fallback to tendermint tx indexer! failed txns will not be available", "height", height, "txIndex", index)
 	query := fmt.Sprintf("tx.height=%d AND %s.%s=%d",
 		height, evmtypes.TypeMsgEthereumTx,
 		evmtypes.AttributeKeyTxIndex, index,
@@ -353,17 +356,19 @@ func (b *Backend) queryTendermintTxIndexer(query string, txGetter func(*rpctypes
 	if err != nil {
 		return nil, err
 	}
+
 	if len(resTxs.Txs) == 0 {
 		return nil, errors.New("ethereum tx not found")
 	}
+
 	txResult := resTxs.Txs[0]
-	if !rpctypes.TxSuccessOrExceedsBlockGasLimit(&txResult.TxResult) {
-		return nil, errors.New("invalid ethereum tx")
-	}
 
 	var tx sdk.Tx
-	if txResult.TxResult.Code != 0 {
-		// it's only needed when the tx exceeds block gas limit
+	if rpctypes.TxSuccessOrExceedsBlockGasLimit(&txResult.TxResult) &&
+		txResult.TxResult.Code != abci.CodeTypeOK &&
+		txResult.TxResult.Codespace != evmtypes.ModuleName {
+
+		// only needed when the tx exceeds block gas limit
 		tx, err = b.clientCtx.TxConfig.TxDecoder()(txResult.Tx)
 		if err != nil {
 			return nil, fmt.Errorf("invalid ethereum tx")
@@ -386,7 +391,7 @@ func (b *Backend) GetTransactionByBlockAndIndex(block *tmrpctypes.ResultBlock, i
 	if err == nil {
 		tx, err := b.clientCtx.TxConfig.TxDecoder()(block.Block.Txs[res.TxIndex])
 		if err != nil {
-			b.logger.Debug("invalid ethereum tx", "height", block.Block.Header, "index", idx)
+			b.logger.Warn("invalid ethereum tx", "height", block.Block.Header, "index", idx)
 			return nil, nil
 		}
 
@@ -394,14 +399,14 @@ func (b *Backend) GetTransactionByBlockAndIndex(block *tmrpctypes.ResultBlock, i
 		// msgIndex is inferred from tx events, should be within bound.
 		msg, ok = tx.GetMsgs()[res.MsgIndex].(*evmtypes.MsgEthereumTx)
 		if !ok {
-			b.logger.Debug("invalid ethereum tx", "height", block.Block.Header, "index", idx)
+			b.logger.Warn("invalid ethereum tx", "height", block.Block.Header, "index", idx)
 			return nil, nil
 		}
 	} else {
 		i := int(idx)
 		ethMsgs := b.EthMsgsFromTendermintBlock(block, blockRes)
 		if i >= len(ethMsgs) {
-			b.logger.Debug("block txs index out of bound", "index", i)
+			b.logger.Warn("block txs index out of bound", "index", i)
 			return nil, nil
 		}
 

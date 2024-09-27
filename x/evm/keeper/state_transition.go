@@ -218,6 +218,7 @@ func (k *Keeper) ApplyTransaction(ctx sdk.Context, msgEth *types.MsgEthereumTx) 
 
 	if !res.Failed() {
 		receipt.Status = ethtypes.ReceiptStatusSuccessful
+
 		// Only call hooks if tx executed successfully.
 		if err = k.PostTxProcessing(tmpCtx, msg, receipt); err != nil {
 			// If hooks return error, revert the whole tx.
@@ -232,6 +233,8 @@ func (k *Keeper) ApplyTransaction(ctx sdk.Context, msgEth *types.MsgEthereumTx) 
 			// Since the post-processing can alter the log, we need to update the result
 			res.Logs = types.NewLogsFromEth(receipt.Logs)
 		}
+	} else {
+		receipt.Status = ethtypes.ReceiptStatusFailed
 	}
 
 	// refund gas in order to match the Ethereum gas consumption instead of the default SDK one.

@@ -465,7 +465,7 @@ func (suite *StateTransitionTestSuite) TestRefundGas() {
 			noError:        false,
 			expGasRefund:   params.TxGas,
 			malleate: func() {
-				m, err = suite.createContractGethMsg(
+				m, err = suite.createUnderpricedContractGethMsg(
 					suite.StateDB().GetNonce(suite.Address),
 					ethtypes.LatestSignerForChainID(suite.App.EvmKeeper.ChainID()),
 					big.NewInt(-100),
@@ -695,11 +695,11 @@ func (suite *StateTransitionTestSuite) TestApplyMessageWithConfig() {
 		{
 			"create contract tx with config param EnableCreate = false",
 			func() {
-				msg, err = suite.createContractGethMsg(vmdb.GetNonce(suite.Address), signer, big.NewInt(1))
+				msg, err = suite.createUnderpricedContractGethMsg(vmdb.GetNonce(suite.Address), signer, big.NewInt(1))
 				suite.Require().NoError(err)
 				config.Params.EnableCreate = false
 			},
-			true,
+			true, // NOTE(max): this checks for the wrong error; TODO: error matcing
 		},
 	}
 
@@ -732,8 +732,8 @@ func (suite *StateTransitionTestSuite) TestApplyMessageWithConfig() {
 	}
 }
 
-func (suite *StateTransitionTestSuite) createContractGethMsg(nonce uint64, signer ethtypes.Signer, gasPrice *big.Int) (*core.Message, error) {
-	ethMsg, err := utiltx.CreateContractMsgTx(nonce, signer, gasPrice, suite.Address, suite.Signer)
+func (suite *StateTransitionTestSuite) createUnderpricedContractGethMsg(nonce uint64, signer ethtypes.Signer, gasPrice *big.Int) (*core.Message, error) {
+	ethMsg, err := utiltx.CreateUnderpricedContractMsgTx(nonce, signer, gasPrice, suite.Address, suite.Signer)
 	if err != nil {
 		return nil, err
 	}

@@ -277,7 +277,7 @@ func (b *Backend) EthMsgsFromTendermintBlock(
 
 		tx, err := b.clientCtx.TxConfig.TxDecoder()(tx)
 		if err != nil {
-			b.logger.Debug("failed to decode transaction in block", "height", block.Height, "error", err.Error())
+			b.logger.Warn("failed to decode transaction in block", "height", block.Height, "error", err.Error())
 			continue
 		}
 

@@ -457,7 +457,7 @@ func (e *PublicAPI) GetTransactionLogs(txHash common.Hash) ([]*ethtypes.Log, err
 		uint64(resBlockResult.Height),
 	)
 	if err != nil {
-		e.logger.Debug("failed to parse tx logs", "error", err.Error())
+		e.logger.Warn("failed to parse tx logs", "error", err.Error())
 		return nil, nil
 	}
 

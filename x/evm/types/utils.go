@@ -110,13 +110,16 @@ func DecodeMsgLogsFromEvents(in []byte, events []abci.Event, msgIndex int, block
 	if err != nil {
 		return nil, err
 	}
+
 	var logs []*ethtypes.Log
 	if msgIndex < len(txResponses) {
 		logs = logsFromTxResponse(nil, txResponses[msgIndex], blockNumber)
 	}
+
 	if len(logs) == 0 {
 		logs, err = TxLogsFromEvents(events, msgIndex)
 	}
+
 	return logs, err
 }
 
@@ -135,7 +138,8 @@ func TxLogsFromEvents(events []abci.Event, msgIndex int) ([]*ethtypes.Log, error
 
 		return ParseTxLogsFromEvent(event)
 	}
-	return nil, fmt.Errorf("eth tx logs not found for message index %d", msgIndex)
+
+	return []*ethtypes.Log{}, nil
 }
 
 // ParseTxLogsFromEvent parse tx logs from one event
