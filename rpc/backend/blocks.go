@@ -254,9 +254,7 @@ func (b *Backend) BlockNumberFromTendermintByHash(blockHash common.Hash) (*big.I
 	return big.NewInt(resBlock.Block.Height), nil
 }
 
-// EthMsgsFromTendermintBlock returns all real MsgEthereumTxs from a
-// Tendermint block. It also ensures consistency over the correct txs indexes
-// across RPC endpoints
+// EthMsgsFromTendermintBlock returns all real MsgEthereumTxs from a Tendermint block.
 func (b *Backend) EthMsgsFromTendermintBlock(
 	resBlock *tmrpctypes.ResultBlock,
 	blockRes *tmrpctypes.ResultBlockResults,
@@ -264,24 +262,14 @@ func (b *Backend) EthMsgsFromTendermintBlock(
 	var result []*evmtypes.MsgEthereumTx
 	block := resBlock.Block
 
-	txResults := blockRes.TxsResults
-
-	for i, tx := range block.Txs {
-		// Check if tx exists on EVM by cross checking with blockResults:
-		//  - Include unsuccessful tx that exceeds block gas limit
-		//  - Exclude unsuccessful tx with any other error but ExceedBlockGasLimit
-		if !rpctypes.TxSuccessOrExceedsBlockGasLimit(txResults[i]) {
-			b.logger.Debug("invalid tx result code", "cosmos-hash", hexutil.Encode(tx.Hash()))
-			continue
-		}
-
-		tx, err := b.clientCtx.TxConfig.TxDecoder()(tx)
+	for _, tx := range block.Txs {
+		decodedTx, err := b.clientCtx.TxConfig.TxDecoder()(tx)
 		if err != nil {
 			b.logger.Warn("failed to decode transaction in block", "height", block.Height, "error", err.Error())
 			continue
 		}
 
-		for _, msg := range tx.GetMsgs() {
+		for _, msg := range decodedTx.GetMsgs() {
 			ethMsg, ok := msg.(*evmtypes.MsgEthereumTx)
 			if !ok {
 				continue
@@ -445,14 +433,8 @@ func (b *Backend) RPCBlockFromTendermintBlock(
 		b.logger.Error("failed to query consensus params", "error", err.Error())
 	}
 
-	gasUsed := uint64(0)
-
+	var gasUsed uint64
 	for _, txsResult := range blockRes.TxsResults {
-		// workaround for cosmos-sdk bug. https://github.com/cosmos/cosmos-sdk/issues/10832
-		if ShouldIgnoreGasUsed(txsResult) {
-			// block gas limit has exceeded, other txs must have failed with same reason.
-			break
-		}
 		gasUsed += uint64(txsResult.GetGasUsed())
 	}
 
@@ -511,6 +493,7 @@ func (b *Backend) EthBlockFromTendermintBlock(
 	}
 
 	// TODO: add tx receipts
+	// TODO(max): check if this still needed
 	ethBlock := ethtypes.NewBlockWithHeader(ethHeader).WithBody(ethtypes.Body{Transactions: txs})
 
 	return ethBlock, nil

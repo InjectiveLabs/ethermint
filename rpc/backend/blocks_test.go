@@ -984,7 +984,7 @@ func (suite *BackendTestSuite) TestGetEthBlockFromTendermint() {
 			true,
 		},
 		{
-			"pass - block with tx - with ShouldIgnoreGasUsed - empty txs",
+			"pass - block with tx - with ShouldIgnoreGasUsed",
 			sdkmath.NewInt(1).BigInt(),
 			sdk.AccAddress(tests.GenerateAddress().Bytes()),
 			int64(1),
@@ -1010,7 +1010,7 @@ func (suite *BackendTestSuite) TestGetEthBlockFromTendermint() {
 				client := suite.backend.clientCtx.Client.(*mocks.Client)
 				RegisterConsensusParams(client, height)
 			},
-			false,
+			true,
 			true,
 		},
 		{
@@ -1128,20 +1128,6 @@ func (suite *BackendTestSuite) TestEthMsgsFromTendermintBlock() {
 		expMsgs  []*evmtypes.MsgEthereumTx
 	}{
 		{
-			"tx in not included in block - unsuccessful tx without ExceedBlockGasLimit error",
-			&tmrpctypes.ResultBlock{
-				Block: tmtypes.MakeBlock(1, []tmtypes.Tx{bz}, nil, nil),
-			},
-			&tmrpctypes.ResultBlockResults{
-				TxsResults: []*types.ExecTxResult{
-					{
-						Code: 1,
-					},
-				},
-			},
-			[]*evmtypes.MsgEthereumTx(nil),
-		},
-		{
 			"tx included in block - unsuccessful tx with ExceedBlockGasLimit error",
 			&tmrpctypes.ResultBlock{
 				Block: tmtypes.MakeBlock(1, []tmtypes.Tx{bz}, nil, nil),
@@ -1171,6 +1157,8 @@ func (suite *BackendTestSuite) TestEthMsgsFromTendermintBlock() {
 			},
 			[]*evmtypes.MsgEthereumTx{msgEthereumTx},
 		},
+
+		// TODO(max): include tests for failed vm execution and reverts
 	}
 	for _, tc := range testCases {
 		suite.Run(fmt.Sprintf("Case %s", tc.name), func() {
