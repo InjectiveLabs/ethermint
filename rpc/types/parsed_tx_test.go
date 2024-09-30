@@ -33,10 +33,6 @@ func TestParseTxResult(t *testing.T) {
 						{Key: "amount", Value: "1252860basetcro"},
 					}},
 					{Type: evmtypes.EventTypeEthereumTx, Attributes: []abci.EventAttribute{
-						{Key: "ethereumTxHash", Value: txHash.Hex()},
-						{Key: "txIndex", Value: "0"},
-					}},
-					{Type: evmtypes.EventTypeEthereumTx, Attributes: []abci.EventAttribute{
 						{Key: "amount", Value: "1000"},
 						{Key: "ethereumTxHash", Value: txHash.Hex()},
 						{Key: "txIndex", Value: "0"},
