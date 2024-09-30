@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -54,12 +55,16 @@ func (suite *HandlerTestSuite) SetupTest() {
 				Address: app.AccountKeeper.GetModuleAddress(authtypes.FeeCollectorName).String(),
 				Coins:   coins,
 			},
+			{
+				Address: sdk.AccAddress(suite.Address.Bytes()).String(),
+				Coins:   coins,
+			},
 		}
 		var bankGenesis banktypes.GenesisState
 		app.AppCodec().MustUnmarshalJSON(genesis[banktypes.ModuleName], &bankGenesis)
 		// Update balances and total supply
 		bankGenesis.Balances = append(bankGenesis.Balances, balances...)
-		bankGenesis.Supply = bankGenesis.Supply.Add(coins...).Add(coins...)
+		bankGenesis.Supply = bankGenesis.Supply.Add(coins...).Add(coins...).Add(coins...)
 		genesis[banktypes.ModuleName] = app.AppCodec().MustMarshalJSON(&bankGenesis)
 		acc := &ethermint.EthAccount{
 			BaseAccount: authtypes.NewBaseAccount(sdk.AccAddress(suite.Address.Bytes()), nil, 0, 0),
@@ -145,6 +150,7 @@ func (suite *HandlerTestSuite) TestHandleMsgEthereumTx() {
 			if tc.expPass {
 				suite.Require().NoError(err)
 				suite.Require().NotNil(res)
+				suite.Require().False(res.Failed())
 			} else {
 				suite.Require().Error(err)
 				suite.Require().Nil(res)
@@ -293,6 +299,7 @@ func (suite *HandlerTestSuite) TestSendTransaction() {
 	result, err := suite.App.EvmKeeper.EthereumTx(suite.Ctx, tx)
 	suite.Require().NoError(err)
 	suite.Require().NotNil(result)
+	suite.Require().False(result.Failed())
 }
 
 func (suite *HandlerTestSuite) TestOutOfGasWhenDeployContract() {
@@ -484,7 +491,7 @@ func (suite *HandlerTestSuite) TestERC20TransferReverted() {
 			suite.Require().NoError(err)
 
 			res, err := k.EthereumTx(suite.Ctx, tx)
-			suite.Require().NoError(err)
+			suite.Require().ErrorContains(err, tc.expErr)
 
 			suite.Require().True(res.Failed())
 			suite.Require().Equal(tc.expErr, res.VmError)
@@ -557,7 +564,7 @@ func (suite *HandlerTestSuite) TestContractDeploymentRevert() {
 			suite.Require().NoError(db.Commit())
 
 			rsp, err := k.EthereumTx(suite.Ctx, tx)
-			suite.Require().NoError(err)
+			suite.Require().ErrorContains(err, vm.ErrOutOfGas.Error())
 			suite.Require().True(rsp.Failed())
 
 			// nonce don't change
