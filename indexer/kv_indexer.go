@@ -61,8 +61,20 @@ func NewKVIndexer(db dbm.DB, logger log.Logger, clientCtx client.Context) *KVInd
 // - Parses eth Tx infos from cosmos-sdk events for every TxResult
 // - Iterates over all the messages of the Tx
 // - Builds and stores a indexer.TxResult based on parsed events for every message
-func (kv *KVIndexer) IndexBlock(block *tmtypes.Block, txResults []*abci.ExecTxResult) error {
-	height := block.Height
+func (kv *KVIndexer) IndexBlock(block *tmtypes.Block, txResults []*abci.ExecTxResult) (err error) {
+	defer func(err *error) {
+		if e := recover(); e != nil {
+			kv.logger.Debug("panic during parsing block results", "error", e)
+
+			if ee, ok := e.(error); ok {
+				*err = ee
+			} else {
+				*err = fmt.Errorf("panic during parsing block results: %v", e)
+			}
+		}
+	}(&err)
+
+	kv.logger.Debug("(KVIndexer) IndexBlock", "height", block.Height, "txns:", len(block.Txs))
 
 	batch := kv.db.NewBatch()
 	defer batch.Close()
@@ -71,13 +83,10 @@ func (kv *KVIndexer) IndexBlock(block *tmtypes.Block, txResults []*abci.ExecTxRe
 	var ethTxIndex int32
 	for txIndex, tx := range block.Txs {
 		result := txResults[txIndex]
-		if !rpctypes.TxSuccessOrExceedsBlockGasLimit(result) {
-			continue
-		}
 
 		tx, err := kv.clientCtx.TxConfig.TxDecoder()(tx)
 		if err != nil {
-			kv.logger.Error("Fail to decode tx", "err", err, "block", height, "txIndex", txIndex)
+			kv.logger.Error("Fail to decode tx", "err", err, "block", block.Height, "txIndex", txIndex)
 			continue
 		}
 
@@ -87,7 +96,7 @@ func (kv *KVIndexer) IndexBlock(block *tmtypes.Block, txResults []*abci.ExecTxRe
 
 		txs, err := rpctypes.ParseTxResult(result, tx)
 		if err != nil {
-			kv.logger.Error("Fail to parse event", "err", err, "block", height, "txIndex", txIndex)
+			kv.logger.Error("Fail to parse event", "err", err, "block", block.Height, "txIndex", txIndex)
 			continue
 		}
 
@@ -97,21 +106,23 @@ func (kv *KVIndexer) IndexBlock(block *tmtypes.Block, txResults []*abci.ExecTxRe
 			var txHash common.Hash
 
 			txResult := ethermint.TxResult{
-				Height:     height,
+				Height:     block.Height,
 				TxIndex:    uint32(txIndex),
 				MsgIndex:   uint32(msgIndex),
 				EthTxIndex: ethTxIndex,
 			}
-			if result.Code != abci.CodeTypeOK {
+			if result.Code != abci.CodeTypeOK && result.Codespace != evmtypes.ModuleName {
 				// exceeds block gas limit scenario, set gas used to gas limit because that's what's charged by ante handler.
 				// some old versions don't emit any events, so workaround here directly.
 				txResult.GasUsed = ethMsg.GetGas()
 				txResult.Failed = true
 				txHash = ethMsg.Hash()
 			} else {
+				// success or fail due to VM error
+
 				parsedTx := txs.GetTxByMsgIndex(msgIndex)
 				if parsedTx == nil {
-					kv.logger.Error("msg index not found in events", "msgIndex", msgIndex)
+					kv.logger.Error("msg index not found in results", "msgIndex", msgIndex)
 					continue
 				}
 				if parsedTx.EthTxIndex >= 0 && parsedTx.EthTxIndex != ethTxIndex {
@@ -127,7 +138,7 @@ func (kv *KVIndexer) IndexBlock(block *tmtypes.Block, txResults []*abci.ExecTxRe
 			ethTxIndex++
 
 			if err := saveTxResult(kv.clientCtx.Codec, batch, txHash, &txResult); err != nil {
-				return errorsmod.Wrapf(err, "IndexBlock %d", height)
+				return errorsmod.Wrapf(err, "IndexBlock %d", block.Height)
 			}
 		}
 	}

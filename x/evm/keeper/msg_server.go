@@ -29,6 +29,8 @@ import (
 	sdkmath "cosmossdk.io/math"
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/hashicorp/go-metrics"
 
 	"github.com/evmos/ethermint/x/evm/types"
@@ -123,7 +125,29 @@ func (k *Keeper) EthereumTx(goCtx context.Context, msg *types.MsgEthereumTx) (*t
 		),
 	})
 
+	if response.Failed() {
+		msgErr := types.NewVmErrorWithRet(
+			response.VmError,
+			response.Ret,
+			response.Hash,
+			response.GasUsed,
+		)
+
+		return response, msgErr
+	}
+
 	return response, nil
+}
+
+func unpackRevertReason(ret []byte) (string, bool) {
+	retBytes := common.CopyBytes(ret)
+
+	reason, errUnpack := abi.UnpackRevert(retBytes)
+	if errUnpack == nil {
+		return reason, true
+	}
+
+	return "", false
 }
 
 // UpdateParams implements the gRPC MsgServer interface. When an UpdateParams

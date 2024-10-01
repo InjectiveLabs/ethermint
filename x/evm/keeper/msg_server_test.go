@@ -1,6 +1,7 @@
 package keeper_test
 
 import (
+	"errors"
 	"math/big"
 	"testing"
 
@@ -9,7 +10,6 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/params"
 	"github.com/evmos/ethermint/testutil"
 	utiltx "github.com/evmos/ethermint/testutil/tx"
 	"github.com/evmos/ethermint/x/evm/statedb"
@@ -36,12 +36,12 @@ func (suite *MsgServerTestSuite) TestEthereumTx() {
 	testCases := []struct {
 		name     string
 		malleate func()
-		expErr   bool
+		expErr   error
 	}{
 		{
 			"Deploy contract tx - insufficient gas",
 			func() {
-				msg, err = utiltx.CreateContractMsgTx(
+				msg, err = utiltx.CreateUnderpricedContractMsgTx(
 					vmdb.GetNonce(suite.Address),
 					signer,
 					big.NewInt(1),
@@ -50,7 +50,37 @@ func (suite *MsgServerTestSuite) TestEthereumTx() {
 				)
 				suite.Require().NoError(err)
 			},
-			true,
+			errors.New("intrinsic gas too low"),
+		},
+		{
+			"Deploy contract tx - vm revert",
+			func() {
+				msg, err = utiltx.CreateRevertingContractMsgTx(
+					vmdb.GetNonce(suite.Address),
+					signer,
+					big.NewInt(1),
+					suite.Address,
+					suite.Signer,
+				)
+				suite.Require().NoError(err)
+				expectedGasUsed = msg.GetGas()
+			},
+			errors.New("invalid opcode: opcode 0xde not defined"),
+		},
+		{
+			"Call no code tx - success",
+			func() {
+				msg, err = utiltx.CreateNoCodeCallMsgTx(
+					vmdb.GetNonce(suite.Address),
+					signer,
+					big.NewInt(1),
+					suite.Address,
+					suite.Signer,
+				)
+				suite.Require().NoError(err)
+				expectedGasUsed = msg.GetGas()
+			},
+			nil,
 		},
 		{
 			"Transfer funds tx",
@@ -65,9 +95,9 @@ func (suite *MsgServerTestSuite) TestEthereumTx() {
 					nil,
 				)
 				suite.Require().NoError(err)
-				expectedGasUsed = params.TxGas
+				expectedGasUsed = msg.GetGas()
 			},
-			false,
+			nil,
 		},
 	}
 
@@ -79,8 +109,8 @@ func (suite *MsgServerTestSuite) TestEthereumTx() {
 
 			tc.malleate()
 			res, err := suite.App.EvmKeeper.EthereumTx(suite.Ctx, msg)
-			if tc.expErr {
-				suite.Require().Error(err)
+			if tc.expErr != nil {
+				suite.Require().ErrorContains(err, tc.expErr.Error())
 				return
 			}
 			suite.Require().NoError(err)

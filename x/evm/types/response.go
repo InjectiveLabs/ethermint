@@ -1,8 +1,6 @@
 package types
 
 import (
-	"strconv"
-
 	abci "github.com/cometbft/cometbft/abci/types"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -27,10 +25,10 @@ func PatchTxResponses(input []*abci.ExecTxResult) []*abci.ExecTxResult {
 		}
 
 		var (
-			anteEvents []abci.Event
 			// if the response data is modified and need to be marshaled back
 			dataDirty bool
 		)
+
 		for i, rsp := range txMsgData.MsgResponses {
 			var response MsgEthereumTxResponse
 			if rsp.TypeUrl != "/"+proto.MessageName(&response) {
@@ -40,14 +38,6 @@ func PatchTxResponses(input []*abci.ExecTxResult) []*abci.ExecTxResult {
 			if err := proto.Unmarshal(rsp.Value, &response); err != nil {
 				panic(err)
 			}
-
-			anteEvents = append(anteEvents, abci.Event{
-				Type: EventTypeEthereumTx,
-				Attributes: []abci.EventAttribute{
-					{Key: AttributeKeyEthereumTxHash, Value: response.Hash},
-					{Key: AttributeKeyTxIndex, Value: strconv.FormatUint(txIndex, 10)},
-				},
-			})
 
 			if len(response.Logs) > 0 {
 				for _, log := range response.Logs {
@@ -68,22 +58,15 @@ func PatchTxResponses(input []*abci.ExecTxResult) []*abci.ExecTxResult {
 			txIndex++
 		}
 
-		if len(anteEvents) > 0 {
-			// prepend ante events in front to emulate the side effect of `EthEmitEventDecorator`
-			events := make([]abci.Event, len(anteEvents)+len(res.Events))
-			copy(events, anteEvents)
-			copy(events[len(anteEvents):], res.Events)
-			res.Events = events
-
-			if dataDirty {
-				data, err := proto.Marshal(&txMsgData)
-				if err != nil {
-					panic(err)
-				}
-
-				res.Data = data
+		if dataDirty {
+			data, err := proto.Marshal(&txMsgData)
+			if err != nil {
+				panic(err)
 			}
+
+			res.Data = data
 		}
 	}
+
 	return input
 }
