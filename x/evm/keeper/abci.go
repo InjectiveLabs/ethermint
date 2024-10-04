@@ -17,6 +17,7 @@ package keeper
 
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"math/big"
@@ -33,15 +34,24 @@ func (k *Keeper) BeginBlock(ctx sdk.Context) error {
 
 	if k.evmTracer != nil && k.evmTracer.OnBlockStart != nil {
 		b := types.NewBlock(&types.Header{
-			Number: big.NewInt(ctx.BlockHeight()),
-			Time:   uint64(ctx.BlockTime().Unix()),
+			Number:     big.NewInt(ctx.BlockHeight()),
+			Time:       uint64(ctx.BlockTime().Unix()),
+			ParentHash: ethcommon.BytesToHash(ctx.BlockHeader().LastBlockId.Hash),
 		}, nil, nil, nil)
 
+		finalizedHeaderNumber := ctx.BlockHeight() - 1
+		if ctx.BlockHeight() == 0 {
+			finalizedHeaderNumber = 0
+		}
+
+		finalizedHeader := &types.Header{
+			Number: big.NewInt(finalizedHeaderNumber),
+		}
+
 		k.evmTracer.OnBlockStart(tracing.BlockEvent{
-			Block: b,
-			TD:    big.NewInt(1),
-			// Finalized: , // todo: how to set up the header here?
-			// Safe:      , // todo: how to set up the header here?
+			Block:     b,
+			TD:        big.NewInt(1),
+			Finalized: finalizedHeader,
 		})
 	}
 
