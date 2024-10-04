@@ -37,6 +37,7 @@ func (k *Keeper) BeginBlock(ctx sdk.Context) error {
 			Number:     big.NewInt(ctx.BlockHeight()),
 			Time:       uint64(ctx.BlockTime().Unix()),
 			ParentHash: ethcommon.BytesToHash(ctx.BlockHeader().LastBlockId.Hash),
+			Coinbase:   ethcommon.BytesToAddress(ctx.BlockHeader().ProposerAddress),
 		}, nil, nil, nil)
 
 		finalizedHeaderNumber := ctx.BlockHeight() - 1
@@ -50,7 +51,7 @@ func (k *Keeper) BeginBlock(ctx sdk.Context) error {
 
 		k.evmTracer.OnBlockStart(tracing.BlockEvent{
 			Block:     b,
-			TD:        big.NewInt(1),
+			TD:        big.NewInt(0),
 			Finalized: finalizedHeader,
 		})
 	}

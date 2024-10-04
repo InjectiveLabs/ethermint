@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"math/big"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -40,7 +39,6 @@ import (
 	"cosmossdk.io/log"
 	abci "github.com/cometbft/cometbft/abci/types"
 	tmos "github.com/cometbft/cometbft/libs/os"
-	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	dbm "github.com/cosmos/cosmos-db"
 
 	"github.com/cosmos/cosmos-sdk/baseapp"
@@ -127,9 +125,6 @@ import (
 	ibcexported "github.com/cosmos/ibc-go/v8/modules/core/exported"
 	ibckeeper "github.com/cosmos/ibc-go/v8/modules/core/keeper"
 	ibctm "github.com/cosmos/ibc-go/v8/modules/light-clients/07-tendermint"
-	ethcommon "github.com/ethereum/go-ethereum/common"
-	ethhexutil "github.com/ethereum/go-ethereum/common/hexutil"
-	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/evmos/ethermint/client/docs"
 
 	"github.com/evmos/ethermint/app/ante"
@@ -1111,44 +1106,4 @@ func initParamsKeeper(appCodec codec.BinaryCodec, legacyAmino *codec.LegacyAmino
 	paramsKeeper.Subspace(evmtypes.ModuleName).WithKeyTable(v0evmtypes.ParamKeyTable()) //nolint: staticcheck
 	paramsKeeper.Subspace(feemarkettypes.ModuleName).WithKeyTable(feemarkettypes.ParamKeyTable())
 	return paramsKeeper
-}
-
-// Call this method in to OnBlockStart call
-func TmBlockHeaderToEVM(
-	ctx sdk.Context,
-	block tmproto.Header,
-	k *evmkeeper.Keeper,
-) (header *ethtypes.Header) {
-	number := big.NewInt(block.Height)
-	lastHash := ethcommon.BytesToHash(block.LastBlockId.Hash)
-	appHash := ethcommon.BytesToHash(block.AppHash)
-	txHash := ethcommon.BytesToHash(block.DataHash)
-	resultHash := ethcommon.BytesToHash(block.LastResultsHash)
-	miner := ethcommon.BytesToAddress(block.ProposerAddress)
-	gasLimit, gasWanted := uint64(0), uint64(0)
-
-	header = &ethtypes.Header{
-		Number:      number,
-		ParentHash:  lastHash,
-		Nonce:       ethtypes.BlockNonce{},   // todo: check if this applies to injective
-		MixDigest:   ethcommon.Hash{},        // todo: check if this applies to injective
-		UncleHash:   ethtypes.EmptyUncleHash, // todo: check if this applies to injective
-		Bloom:       ethtypes.Bloom{},        // k.GetBlockBloom(ctx, block.Height), // todo: check how to implement this
-		Root:        appHash,
-		Coinbase:    miner,
-		Difficulty:  big.NewInt(0),      // todo: check if this applies to injective
-		Extra:       ethhexutil.Bytes{}, // todo: check if this applies to injective
-		GasLimit:    gasLimit,
-		GasUsed:     gasWanted,
-		Time:        uint64(block.Time.Unix()),
-		TxHash:      txHash,
-		ReceiptHash: resultHash,
-		BaseFee:     nil, // k.GetBaseFeePerGas(ctx).RoundInt().BigInt(), // todo: check how to implement this
-	}
-
-	return
-}
-
-func ptr[T any](t T) *T {
-	return &t
 }
