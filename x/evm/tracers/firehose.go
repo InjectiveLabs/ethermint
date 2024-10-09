@@ -183,7 +183,7 @@ type Firehose struct {
 
 	// Block state
 	block             *pbeth.Block
-	cosmosBlockHeader cosmostypes.Header
+	cosmosBlockHeader *cosmostypes.Header
 
 	//fixme: this is a hack, waiting for proto changes
 	lastBlockHash       []byte
@@ -433,20 +433,6 @@ func (f *Firehose) OnCosmosBlockStart(event cosmostracing.CosmosStartBlockEvent)
 		Ver:    4,
 	}
 
-	// TODO: fetch the real parentHash from the event
-	if header.Height == 1 {
-		f.lastParentBlockHash = []byte("0000000000000000000000000000000000000000000000000000000000000000")
-	}
-
-	if header.Height > 1 {
-		// move the parentHash to the previous block
-		f.lastParentBlockHash = f.lastBlockHash
-		fmt.Println("doudou", f.lastParentBlockHash)
-		f.block.Header.ParentHash = f.lastParentBlockHash
-	}
-
-	f.lastBlockHash = f.block.Header.Hash
-
 	if *f.applyBackwardCompatibility {
 		f.block.Ver = 3
 	}
@@ -514,14 +500,36 @@ func (f *Firehose) OnBlockEnd(err error) {
 
 func (f *Firehose) OnCosmosBlockEnd(event cosmostracing.CosmosEndBlockEvent, err error) {
 	firehoseInfo("block ending (err=%s)", errorView(err))
-	f.block.Hash = f.cosmosBlockHeader.Hash()
+
+	// TODO: fetch the real parentHash from the event, implement this once the proto definition changes
+	if f.cosmosBlockHeader.Height == 1 {
+		f.lastParentBlockHash = []byte("0000000000000000000000000000000000000000000000000000000000000000")
+	}
+
+	if f.cosmosBlockHeader.Height > 1 {
+		// move the parentHash to the previous block
+		f.lastParentBlockHash = f.lastBlockHash
+		f.block.Header.ParentHash = f.lastParentBlockHash
+		fmt.Println("doudou: parent block hash", f.block.Header.ParentHash)
+
+		f.cosmosBlockHeader.LastBlockID = cosmostypes.BlockID{
+			Hash: f.lastParentBlockHash,
+			// Missing PartSetHeader
+		}
+	}
+
+	f.block.Header.Hash = f.cosmosBlockHeader.Hash()
+	f.block.Hash = f.block.Header.Hash
 	f.block.Header.LogsBloom = types.BytesToBloom(event.LogsBloom).Bytes()
 
-	f.block.Size = 10 // todo: find the right size
+	// todo: find the right size
+	f.block.Size = 10
 
 	for _, trx := range f.block.TransactionTraces {
 		f.block.Header.GasUsed += trx.GasUsed
 	}
+
+	f.lastBlockHash = f.block.Header.Hash
 
 	if err == nil {
 		if f.blockReorderOrdinal {
@@ -1676,24 +1684,28 @@ func newBlockHeaderFromChainHeader(h *types.Header, td *pbeth.BigInt) *pbeth.Blo
 }
 
 // FIXME: Create a unit test that is going to fail as soon as any header is added in
-func newBlockHeaderFromCosmosChainHeader(h cosmostypes.Header, coinbase []byte, gasLimit uint64, baseFee *big.Int) *pbeth.BlockHeader {
+func newBlockHeaderFromCosmosChainHeader(h *cosmostypes.Header, coinbase []byte, gasLimit uint64, baseFee *big.Int) *pbeth.BlockHeader {
 	difficulty := firehoseBigIntFromNative(new(big.Int).SetInt64(0))
 
+	transactionRoot := types.EmptyRootHash.Bytes()
+	if h.DataHash != nil {
+		transactionRoot = h.DataHash
+	}
+
+	// the hash is calculated by the end block as we are missing some data
+	// same applies with the parent hash
 	pbHead := &pbeth.BlockHeader{
-		Hash:   h.Hash().Bytes(),
-		Number: uint64(h.Height),
-		//ParentHash:       h.LastBlockID.Hash,
+		Number:           uint64(h.Height),
 		UncleHash:        types.EmptyUncleHash.Bytes(), // No uncles in Tendermint
 		Coinbase:         coinbase,
 		StateRoot:        h.AppHash,
-		TransactionsRoot: h.DataHash,
+		TransactionsRoot: transactionRoot,
 		ReceiptRoot:      types.EmptyRootHash.Bytes(),
-		LogsBloom:        types.EmptyVerkleHash.Bytes(), // TODO: fix this
 		Difficulty:       difficulty,
 		TotalDifficulty:  difficulty,
 		GasLimit:         gasLimit,
 		Timestamp:        timestamppb.New(h.Time),
-		ExtraData:        []byte("0x"),
+		ExtraData:        []byte(nil),
 		MixHash:          common.Hash{}.Bytes(),
 		Nonce:            types.BlockNonce{}.Uint64(), // PoW specific,
 		BaseFeePerGas:    firehoseBigIntFromNative(baseFee),

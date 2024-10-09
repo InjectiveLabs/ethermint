@@ -43,7 +43,7 @@ func ToCosmosStartBlockEvent(k *Keeper, ctx sdk.Context, coinbaseBytes []byte, b
 	}
 
 	return tracing.CosmosStartBlockEvent{
-		CosmosHeader: h,
+		CosmosHeader: &h,
 		BaseFee:      baseFee,
 		GasLimit:     gasLimit,
 		Coinbase:     coinbaseBytes,
