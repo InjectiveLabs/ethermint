@@ -120,6 +120,51 @@ func (suite *StateDBTestSuite) TestTracer_Balance() {
 			expBalance:        big.NewInt(0),
 			expBalanceChanges: 3,
 		},
+		{
+			name: "multiple transfers",
+			malleate: func(db *statedb.StateDB) {
+				db.AddBalance(address, uint256.NewInt(10), tracing.BalanceChangeUnspecified)
+				db.AddBalance(address2, uint256.NewInt(10), tracing.BalanceChangeUnspecified)
+				db.Transfer(address, address2, big.NewInt(10))
+				db.Transfer(address2, address, big.NewInt(5))
+				suite.Require().Equal(uint256.NewInt(15), db.GetBalance(address2))
+			},
+			expBalance:        big.NewInt(5),
+			expBalanceChanges: 6,
+		},
+		{
+			name: "set balance",
+			malleate: func(db *statedb.StateDB) {
+				db.SetBalance(address, uint256.NewInt(10).ToBig())
+				suite.Require().Equal(uint256.NewInt(10), db.GetBalance(address))
+			},
+			expBalance:        big.NewInt(10),
+			expBalanceChanges: 1,
+		},
+		{
+			name: "multiple set balance",
+			malleate: func(db *statedb.StateDB) {
+				db.SetBalance(address, uint256.NewInt(10).ToBig())
+				db.SetBalance(address2, uint256.NewInt(10).ToBig())
+				suite.Require().Equal(uint256.NewInt(10), db.GetBalance(address))
+				suite.Require().Equal(uint256.NewInt(10), db.GetBalance(address2))
+			},
+			expBalance:        big.NewInt(10),
+			expBalanceChanges: 2,
+		},
+		{
+			name: "multiple set balance and some transfers",
+			malleate: func(db *statedb.StateDB) {
+				db.SetBalance(address, uint256.NewInt(10).ToBig())
+				db.SetBalance(address2, uint256.NewInt(10).ToBig())
+				db.Transfer(address, address2, big.NewInt(10))
+				db.Transfer(address2, address, big.NewInt(5))
+				suite.Require().Equal(uint256.NewInt(5), db.GetBalance(address))
+				suite.Require().Equal(uint256.NewInt(15), db.GetBalance(address2))
+			},
+			expBalance:        big.NewInt(5),
+			expBalanceChanges: 6,
+		},
 	}
 
 	for _, tc := range testCases {
