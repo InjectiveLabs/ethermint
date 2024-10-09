@@ -116,7 +116,7 @@ func NewTracingHooksFromFirehose(tracer *Firehose) *tracing.Hooks {
 		OnOpcode:  tracer.OnOpcode,
 		OnFault:   tracer.OnOpcodeFault,
 
-		OnBalanceChange: tracer.OnBalanceChange, // todo: this should be called when the block is done to calculate the balance changes in terms of rewards to the miner??
+		OnBalanceChange: tracer.OnBalanceChange,
 		OnNonceChange:   tracer.OnNonceChange,
 		OnCodeChange:    tracer.OnCodeChange,
 		OnStorageChange: tracer.OnStorageChange,
@@ -501,25 +501,9 @@ func (f *Firehose) OnBlockEnd(err error) {
 func (f *Firehose) OnCosmosBlockEnd(event cosmostracing.CosmosEndBlockEvent, err error) {
 	firehoseInfo("block ending (err=%s)", errorView(err))
 
-	// TODO: fetch the real parentHash from the event, implement this once the proto definition changes
-	if f.cosmosBlockHeader.Height == 1 {
-		f.lastParentBlockHash = []byte("0000000000000000000000000000000000000000000000000000000000000000")
-	}
-
-	if f.cosmosBlockHeader.Height > 1 {
-		// move the parentHash to the previous block
-		f.lastParentBlockHash = f.lastBlockHash
-		f.block.Header.ParentHash = f.lastParentBlockHash
-
-		f.cosmosBlockHeader.LastBlockID = cosmostypes.BlockID{
-			Hash: f.lastParentBlockHash,
-			// Missing PartSetHeader
-		}
-	}
-
+	f.block.Header.LogsBloom = types.BytesToBloom(event.LogsBloom).Bytes()
 	f.block.Header.Hash = f.cosmosBlockHeader.Hash()
 	f.block.Hash = f.block.Header.Hash
-	f.block.Header.LogsBloom = types.BytesToBloom(event.LogsBloom).Bytes()
 
 	// todo: find the right size
 	f.block.Size = 10
@@ -1265,7 +1249,7 @@ func (f *Firehose) OnBalanceChange(a common.Address, prev, new *big.Int, reason 
 
 	if *f.applyBackwardCompatibility {
 		// Known Firehose issue: It's possible to burn Ether by sending some ether to a suicided account. In those case,
-		// at theend of block producing, StateDB finalize the block by burning ether from the account. This is something
+		// at the end of block producing, StateDB finalize the block by burning ether from the account. This is something
 		// we were not tracking in the old Firehose instrumentation.
 		if reason == tracing.BalanceDecreaseSelfdestructBurn {
 			return
@@ -1694,6 +1678,7 @@ func newBlockHeaderFromCosmosChainHeader(h *cosmostypes.Header, coinbase []byte,
 	// the hash is calculated by the end block as we are missing some data
 	// same applies with the parent hash
 	pbHead := &pbeth.BlockHeader{
+		ParentHash:       h.LastBlockID.Hash,
 		Number:           uint64(h.Height),
 		UncleHash:        types.EmptyUncleHash.Bytes(), // No uncles in Tendermint
 		Coinbase:         coinbase,

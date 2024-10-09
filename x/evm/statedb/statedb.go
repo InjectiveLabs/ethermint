@@ -17,6 +17,7 @@ package statedb
 
 import (
 	"fmt"
+	cosmostracing "github.com/evmos/ethermint/x/evm/tracing"
 	"math/big"
 	"sort"
 
@@ -101,7 +102,7 @@ type StateDB struct {
 	nativeEvents sdk.Events
 
 	// EVM Tracer
-	evmTracer *tracing.Hooks
+	evmTracer *cosmostracing.Hooks
 
 	// handle balances natively
 	evmDenom string
@@ -146,7 +147,7 @@ func NewWithParams(ctx sdk.Context, keeper Keeper, txConfig TxConfig, evmDenom s
 	return db
 }
 
-func (s *StateDB) SetTracer(tracer *tracing.Hooks) {
+func (s *StateDB) SetTracer(tracer *cosmostracing.Hooks) {
 	s.evmTracer = tracer
 }
 
@@ -431,11 +432,29 @@ func (s *StateDB) Transfer(sender, recipient common.Address, amount *big.Int) {
 
 	coins := sdk.NewCoins(sdk.NewCoin(s.evmDenom, sdkmath.NewIntFromBigIntMut(amount)))
 	senderAddr := sdk.AccAddress(sender.Bytes())
+	senderBalance := s.GetBalance(sender)
 	recipientAddr := sdk.AccAddress(recipient.Bytes())
+	recipientBalance := s.GetBalance(recipient)
 	if err := s.ExecuteNativeAction(common.Address{}, nil, func(ctx sdk.Context) error {
 		return s.keeper.Transfer(ctx, senderAddr, recipientAddr, coins)
 	}); err != nil {
 		s.err = err
+	}
+
+	if s.err == nil {
+		// sender
+		if s.evmTracer != nil && s.evmTracer.OnBalanceChange != nil {
+			newBalance := new(big.Int)
+			newBalance.Sub(senderBalance.ToBig(), amount)
+			s.evmTracer.OnBalanceChange(common.BytesToAddress(sender.Bytes()), senderBalance.ToBig(), newBalance, tracing.BalanceChangeTransfer)
+		}
+
+		// recipient
+		if s.evmTracer != nil && s.evmTracer.OnBalanceChange != nil {
+			newBalance := new(big.Int)
+			newBalance.Add(recipientBalance.ToBig(), amount)
+			s.evmTracer.OnBalanceChange(common.BytesToAddress(recipient.Bytes()), recipientBalance.ToBig(), newBalance, tracing.BalanceChangeTransfer)
+		}
 	}
 }
 
@@ -456,7 +475,7 @@ func (s *StateDB) AddBalance(addr common.Address, amount *uint256.Int, reason tr
 		s.err = err
 	}
 
-	if s.err != nil {
+	if s.err == nil {
 		if s.evmTracer != nil && s.evmTracer.OnBalanceChange != nil {
 			newBalance := new(big.Int)
 			newBalance.Add(balance.ToBig(), amount.ToBig())
@@ -482,10 +501,10 @@ func (s *StateDB) SubBalance(addr common.Address, amount *uint256.Int, reason tr
 		s.err = err
 	}
 
-	if s.err != nil {
+	if s.err == nil {
 		if s.evmTracer != nil && s.evmTracer.OnBalanceChange != nil {
 			newBalance := new(big.Int)
-			new(big.Int).Sub(balance.ToBig(), amount.ToBig())
+			newBalance.Sub(balance.ToBig(), amount.ToBig())
 			s.evmTracer.OnBalanceChange(addr, balance.ToBig(), newBalance, reason)
 		}
 	}
@@ -500,7 +519,7 @@ func (s *StateDB) SetBalance(addr common.Address, amount *big.Int) {
 		s.err = err
 	}
 
-	if s.err != nil {
+	if s.err == nil {
 		if s.evmTracer != nil && s.evmTracer.OnBalanceChange != nil {
 			s.evmTracer.OnBalanceChange(addr, balance.ToBig(), amount, tracing.BalanceChangeUnspecified)
 		}

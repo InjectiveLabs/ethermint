@@ -2,7 +2,9 @@ package statedb_test
 
 import (
 	"errors"
+	"fmt"
 	"math/big"
+	"strings"
 	"testing"
 
 	"cosmossdk.io/log"
@@ -23,6 +25,7 @@ import (
 	capabilitytypes "github.com/cosmos/ibc-go/modules/capability/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/tracing"
+	ethtracing "github.com/ethereum/go-ethereum/core/tracing"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -45,11 +48,105 @@ var (
 	emptyTxConfig statedb.TxConfig = statedb.NewEmptyTxConfig(blockHash)
 )
 
+type balanceChange struct {
+	// We use string to avoid big.Int equality issues
+	old    string
+	new    string
+	reason ethtracing.BalanceChangeReason
+}
+
+func balanceChangesValues(changes []balanceChange) string {
+	out := make([]string, len(changes))
+	for i, change := range changes {
+		out[i] = fmt.Sprintf("{%q, %q, ethtracing.BalanceChangeReason(%d)}", change.old, change.new, change.reason)
+	}
+
+	return strings.Join(out, "\n")
+}
+
 type StateDBTestSuite struct {
 	suite.Suite
 }
 
-// TODO: add tests with the Tracer
+func (suite *StateDBTestSuite) TestTracer_Balance() {
+	testCases := []struct {
+		name              string
+		malleate          func(*statedb.StateDB)
+		expBalance        *big.Int
+		expBalanceChanges int
+	}{
+		{
+			name: "1 balance change - Add",
+			malleate: func(db *statedb.StateDB) {
+				db.AddBalance(address, uint256.NewInt(10), tracing.BalanceChangeUnspecified)
+			},
+			expBalance:        big.NewInt(10),
+			expBalanceChanges: 1,
+		},
+		{
+			name: "2 balance changes - Add and Sub",
+			malleate: func(db *statedb.StateDB) {
+				db.AddBalance(address, uint256.NewInt(10), tracing.BalanceChangeUnspecified)
+				// get dirty balance
+				suite.Require().Equal(uint256.NewInt(10), db.GetBalance(address))
+				db.SubBalance(address, uint256.NewInt(2), tracing.BalanceChangeUnspecified)
+			},
+			expBalance:        big.NewInt(8),
+			expBalanceChanges: 2,
+		},
+		{
+			name: "add zero balance",
+			malleate: func(db *statedb.StateDB) {
+				db.AddBalance(address, uint256.NewInt(0), tracing.BalanceChangeUnspecified)
+			},
+			expBalance:        big.NewInt(0),
+			expBalanceChanges: 0,
+		},
+		{
+			name: "sub zero balance",
+			malleate: func(db *statedb.StateDB) {
+				db.SubBalance(address, uint256.NewInt(0), tracing.BalanceChangeUnspecified)
+			},
+			expBalance:        big.NewInt(0),
+			expBalanceChanges: 0,
+		},
+		{
+			name: "transfer",
+			malleate: func(db *statedb.StateDB) {
+				db.AddBalance(address, uint256.NewInt(10), tracing.BalanceChangeUnspecified)
+				db.Transfer(address, address2, big.NewInt(10))
+				suite.Require().Equal(uint256.NewInt(10), db.GetBalance(address2))
+			},
+			expBalance:        big.NewInt(0),
+			expBalanceChanges: 3,
+		},
+	}
+
+	for _, tc := range testCases {
+		suite.Run(tc.name, func() {
+			var balanceChanges []balanceChange
+			raw, ctx, keeper := setupTestEnv(suite.T())
+			t, err := types.NewFirehoseCosmosLiveTracer()
+			require.NoError(suite.T(), err)
+			t.OnBalanceChange = func(addr common.Address, prev, new *big.Int, reason ethtracing.BalanceChangeReason) {
+				balanceChanges = append(balanceChanges, balanceChange{prev.String(), new.String(), reason})
+			}
+			keeper.SetTracer(t)
+			db := statedb.New(ctx, keeper, emptyTxConfig)
+			db.SetTracer(t)
+			tc.malleate(db)
+
+			// check dirty state
+			suite.Require().Equal(uint256.MustFromBig(tc.expBalance), db.GetBalance(address))
+			suite.Require().NoError(db.Commit())
+
+			ctx, keeper = newTestKeeper(suite.T(), raw)
+			// check committed balance too
+			suite.Require().Equal(tc.expBalance, keeper.GetEVMDenomBalance(ctx, address))
+			suite.Require().Equal(tc.expBalanceChanges, len(balanceChanges))
+		})
+	}
+}
 
 func (suite *StateDBTestSuite) TestAccount() {
 	key1 := common.BigToHash(big.NewInt(1))

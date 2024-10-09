@@ -348,7 +348,7 @@ func (k *Keeper) ApplyMessageWithConfig(
 	vmCfg := evm.Config
 
 	if vmCfg.Tracer != nil {
-		stateDB.SetTracer(vmCfg.Tracer)
+		stateDB.SetTracer(k.evmTracer)
 		vmCfg.Tracer.OnTxStart(
 			evm.GetVMContext(),
 			ethtypes.NewTx(&ethtypes.LegacyTx{
@@ -362,25 +362,25 @@ func (k *Keeper) ApplyMessageWithConfig(
 			msg.From,
 		)
 
-		if cfg.DebugTrace {
-			// msg.GasPrice should have been set to effective gas price
-			senderAddr := sender.Address()
-			stateDB.SubBalance(
-				sender.Address(),
-				uint256.MustFromBig(new(big.Int).Mul(msg.GasPrice, new(big.Int).SetUint64(msg.GasLimit))),
-				tracing.BalanceChangeUnspecified,
-			)
-			stateDB.SetNonce(senderAddr, stateDB.GetNonce(senderAddr)+1)
-		}
+		//if cfg.DebugTrace {
+		//	// msg.GasPrice should have been set to effective gas price
+		//	senderAddr := sender.Address()
+		//	stateDB.SubBalance(
+		//		sender.Address(),
+		//		uint256.MustFromBig(new(big.Int).Mul(msg.GasPrice, new(big.Int).SetUint64(msg.GasLimit))),
+		//		tracing.BalanceChangeUnspecified,
+		//	)
+		//	stateDB.SetNonce(senderAddr, stateDB.GetNonce(senderAddr)+1)
+		//}
 
 		defer func() {
-			if cfg.DebugTrace {
-				stateDB.AddBalance(
-					sender.Address(),
-					uint256.MustFromBig(new(big.Int).Mul(msg.GasPrice, new(big.Int).SetUint64(leftoverGas))),
-					tracing.BalanceChangeUnspecified,
-				)
-			}
+			//if cfg.DebugTrace {
+			//	stateDB.AddBalance(
+			//		sender.Address(),
+			//		uint256.MustFromBig(new(big.Int).Mul(msg.GasPrice, new(big.Int).SetUint64(leftoverGas))),
+			//		tracing.BalanceChangeUnspecified,
+			//	)
+			//}
 
 			traceErr := err
 			if vmErr != nil {
