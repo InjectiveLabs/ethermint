@@ -17,10 +17,6 @@ package keeper
 
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	ethcommon "github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/tracing"
-	"github.com/ethereum/go-ethereum/core/types"
-	"math/big"
 )
 
 // BeginBlock sets the sdk Context and EIP155 chain id to the Keeper.
@@ -28,32 +24,20 @@ func (k *Keeper) BeginBlock(ctx sdk.Context) error {
 	k.WithChainID(ctx)
 
 	// cache parameters that's common for the whole block.
-	if _, err := k.EVMBlockConfig(ctx, k.ChainID()); err != nil {
+	evmBlockConfig, err := k.EVMBlockConfig(ctx, k.ChainID())
+	if err != nil {
 		return err
 	}
 
-	if k.evmTracer != nil && k.evmTracer.OnBlockStart != nil {
-		b := types.NewBlock(&types.Header{
-			Number:     big.NewInt(ctx.BlockHeight()),
-			Time:       uint64(ctx.BlockTime().Unix()),
-			ParentHash: ethcommon.BytesToHash(ctx.BlockHeader().LastBlockId.Hash),
-			Coinbase:   ethcommon.BytesToAddress(ctx.BlockHeader().ProposerAddress),
-		}, nil, nil, nil)
-
-		finalizedHeaderNumber := ctx.BlockHeight() - 1
-		if ctx.BlockHeight() == 0 {
-			finalizedHeaderNumber = 0
-		}
-
-		finalizedHeader := &types.Header{
-			Number: big.NewInt(finalizedHeaderNumber),
-		}
-
-		k.evmTracer.OnBlockStart(tracing.BlockEvent{
-			Block:     b,
-			TD:        big.NewInt(0),
-			Finalized: finalizedHeader,
-		})
+	if k.evmTracer != nil && k.evmTracer.OnCosmosBlockStart != nil {
+		k.evmTracer.OnCosmosBlockStart(
+			ToCosmosStartBlockEvent(
+				k,
+				ctx,
+				evmBlockConfig.CoinBase.Bytes(),
+				ctx.BlockHeader(),
+			),
+		)
 	}
 
 	return nil
@@ -66,9 +50,9 @@ func (k *Keeper) EndBlock(ctx sdk.Context) error {
 	k.CollectTxBloom(ctx)
 	k.RemoveParamsCache(ctx)
 
-	if k.evmTracer != nil && k.evmTracer.OnBlockEnd != nil {
+	if k.evmTracer != nil && k.evmTracer.OnCosmosBlockEnd != nil {
 		defer func() {
-			k.evmTracer.OnBlockEnd(nil)
+			k.evmTracer.OnCosmosBlockEnd(ToCosmosEndBlockEvent(k, ctx), nil)
 		}()
 	}
 

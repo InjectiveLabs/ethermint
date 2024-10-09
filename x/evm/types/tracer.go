@@ -17,9 +17,11 @@ package types
 
 import (
 	"fmt"
+	cosmostracing "github.com/evmos/ethermint/x/evm/tracing"
 	"os"
 
 	"github.com/ethereum/go-ethereum/eth/tracers"
+	cosmostracers "github.com/evmos/ethermint/x/evm/tracers"
 
 	_ "github.com/ethereum/go-ethereum/eth/tracers/live"
 	_ "github.com/evmos/ethermint/x/evm/tracers"
@@ -81,6 +83,15 @@ func NewLiveTracer(tracer string) (*tracers.Tracer, error) {
 	return &tracers.Tracer{
 		Hooks: h,
 	}, nil
+}
+
+func NewFirehoseCosmosLiveTracer() (*cosmostracing.Hooks, error) {
+	h, err := cosmostracers.NewCosmosFirehoseTracer(false)
+	if err != nil {
+		return nil, fmt.Errorf("initializing live tracer firehose: %w", err)
+	}
+
+	return h, nil
 }
 
 // TxTraceResult is the result of a single transaction trace during a block trace.

@@ -47,7 +47,7 @@ import (
 // beneficiary of the coinbase transaction (since we're not mining).
 //
 // NOTE: the RANDOM opcode is currently not supported since it requires
-// RANDAO implementation. See https://github.com/evmos/ethermint/pull/1520#pullrequestreview-1200504697
+// RANDOM implementation. See https://github.com/evmos/ethermint/pull/1520#pullrequestreview-1200504697
 // for more information.
 func (k *Keeper) NewEVM(
 	ctx sdk.Context,
@@ -74,7 +74,12 @@ func (k *Keeper) NewEVM(
 
 	// Set Config Tracer if it was not already initialized
 	if k.evmTracer != nil {
-		cfg.Tracer = k.evmTracer
+		t := &tracers.Tracer{
+			Hooks:     k.evmTracer.Hooks,
+			GetResult: nil,
+			Stop:      nil,
+		}
+		cfg.Tracer = t
 	}
 
 	vmConfig := k.VMConfig(ctx, cfg)
@@ -179,7 +184,7 @@ func (k *Keeper) ApplyTransaction(ctx sdk.Context, msgEth *types.MsgEthereumTx) 
 	}
 
 	msg := msgEth.AsMessage(cfg.BaseFee)
-	// snapshot to contain the tx processing and post processing in same scope
+	// snapshot to contain the tx processing and post-processing in same scope
 	var commit func()
 	tmpCtx := ctx
 	if k.hooks != nil {

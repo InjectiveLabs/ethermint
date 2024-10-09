@@ -339,9 +339,10 @@ func TestFirehose_reorderIsolatedTransactionsAndOrdinals(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			f := NewFirehose(&FirehoseConfig{
+			f, err := newFirehose(&FirehoseConfig{
 				ApplyBackwardCompatibility: ptr(false),
 			})
+			require.NoError(t, err)
 			f.OnBlockchainInit(params.AllEthashProtocolChanges)
 
 			tt.populate(f)

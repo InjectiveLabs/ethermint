@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/eth/tracers"
+	cosmostracing "github.com/evmos/ethermint/x/evm/tracing"
 	"io"
 	"math/big"
 	"os"
@@ -21,13 +23,13 @@ import (
 	"sync/atomic"
 	"time"
 
+	cosmostypes "github.com/cometbft/cometbft/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/eth/tracers"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -66,6 +68,7 @@ func init() {
 	staticFirehoseChainValidationOnInit()
 
 	tracers.LiveDirectory.Register("firehose", newFirehoseTracer)
+	GlobalLiveTracerRegistry.Register("firehose", NewCosmosFirehoseTracer)
 
 	// Those 2 are defined but not used in this branch, they are kept because used in other branches
 	// so it's easier to keep them here and suppress the warning by faking a usage.
@@ -80,6 +83,22 @@ func newFirehoseTracer(cfg json.RawMessage) (*tracing.Hooks, error) {
 	}
 
 	return NewTracingHooksFromFirehose(firehoseTracer), nil
+}
+
+func NewCosmosFirehoseTracer(backwardCompatibility bool) (*cosmostracing.Hooks, error) {
+	firehoseConfig := new(FirehoseConfig)
+	if backwardCompatibility {
+		firehoseConfig.ApplyBackwardCompatibility = ptr(true)
+	}
+
+	f, err := newFirehose(firehoseConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Firehose tracer: %w", err)
+	}
+
+	hooks := NewTracingHooksFromFirehose(f)
+
+	return NewCosmosTracingHooksFromFirehose(hooks, f), nil
 }
 
 func NewTracingHooksFromFirehose(tracer *Firehose) *tracing.Hooks {
@@ -108,6 +127,15 @@ func NewTracingHooksFromFirehose(tracer *Firehose) *tracing.Hooks {
 		// but Firehose needs them so we add handling for them in our patch.
 		OnSystemCallStart: tracer.OnSystemCallStart,
 		OnSystemCallEnd:   tracer.OnSystemCallEnd,
+	}
+}
+
+func NewCosmosTracingHooksFromFirehose(hooks *tracing.Hooks, firehose *Firehose) *cosmostracing.Hooks {
+	return &cosmostracing.Hooks{
+		Hooks: hooks,
+
+		OnCosmosBlockStart: firehose.OnCosmosBlockStart,
+		OnCosmosBlockEnd:   firehose.OnCosmosBlockEnd,
 	}
 }
 
@@ -154,7 +182,13 @@ type Firehose struct {
 	applyBackwardCompatibility *bool
 
 	// Block state
-	block                       *pbeth.Block
+	block             *pbeth.Block
+	cosmosBlockHeader cosmostypes.Header
+
+	//fixme: this is a hack, waiting for proto changes
+	lastBlockHash       []byte
+	lastParentBlockHash []byte
+
 	blockBaseFee                *big.Int
 	blockOrdinal                *Ordinal
 	blockFinality               *FinalityStatus
@@ -204,10 +238,15 @@ func NewFirehoseFromRawJSON(cfg json.RawMessage) (*Firehose, error) {
 		}
 	}
 
-	return NewFirehose(&config), nil
+	f, err := newFirehose(&config)
+	if err != nil {
+		return nil, err
+	}
+
+	return f, nil
 }
 
-func NewFirehose(config *FirehoseConfig) *Firehose {
+func newFirehose(config *FirehoseConfig) (*Firehose, error) {
 	log.Info("Firehose tracer created", config.LogKeyValues()...)
 
 	firehose := &Firehose{
@@ -240,7 +279,7 @@ func NewFirehose(config *FirehoseConfig) *Firehose {
 		}
 	}
 
-	return firehose
+	return firehose, nil
 }
 
 func (f *Firehose) newIsolatedTransactionTracer(tracerID string) *Firehose {
@@ -349,7 +388,7 @@ func (f *Firehose) OnBlockStart(event tracing.BlockEvent) {
 	f.blockIsPrecompiledAddr = getActivePrecompilesChecker(f.blockRules)
 
 	f.block = &pbeth.Block{
-		Hash:   b.Hash().Bytes(),
+		Hash:   b.Header().Hash().Bytes(),
 		Number: b.Number().Uint64(),
 		Header: newBlockHeaderFromChainHeader(b.Header(), firehoseBigIntFromNative(new(big.Int).Add(event.TD, b.Difficulty()))),
 		Size:   b.Size(),
@@ -363,6 +402,53 @@ func (f *Firehose) OnBlockStart(event tracing.BlockEvent) {
 	for _, uncle := range b.Uncles() {
 		// TODO: check if td should be part of uncles
 		f.block.Uncles = append(f.block.Uncles, newBlockHeaderFromChainHeader(uncle, nil))
+	}
+
+	if f.block.Header.BaseFeePerGas != nil {
+		f.blockBaseFee = f.block.Header.BaseFeePerGas.Native()
+	}
+
+	f.blockFinality.populateFromChain(event.Finalized)
+}
+
+func (f *Firehose) OnCosmosBlockStart(event cosmostracing.CosmosStartBlockEvent) {
+	header := event.CosmosHeader
+
+	coinbase := event.Coinbase
+	gasLimit := event.GasLimit
+	baseFee := event.BaseFee
+
+	f.cosmosBlockHeader = header
+
+	firehoseInfo("block start (number=%d)", header.Height)
+
+	f.ensureBlockChainInit()
+
+	f.blockRules = f.chainConfig.Rules(new(big.Int).SetInt64(header.Height), f.chainConfig.TerminalTotalDifficultyPassed, uint64(header.Time.Unix()))
+	f.blockIsPrecompiledAddr = getActivePrecompilesChecker(f.blockRules)
+
+	f.block = &pbeth.Block{
+		Number: uint64(header.Height),
+		Header: newBlockHeaderFromCosmosChainHeader(header, coinbase, gasLimit, baseFee),
+		Ver:    4,
+	}
+
+	// TODO: fetch the real parentHash from the event
+	if header.Height == 1 {
+		f.lastParentBlockHash = []byte("0000000000000000000000000000000000000000000000000000000000000000")
+	}
+
+	if header.Height > 1 {
+		// move the parentHash to the previous block
+		f.lastParentBlockHash = f.lastBlockHash
+		fmt.Println("doudou", f.lastParentBlockHash)
+		f.block.Header.ParentHash = f.lastParentBlockHash
+	}
+
+	f.lastBlockHash = f.block.Header.Hash
+
+	if *f.applyBackwardCompatibility {
+		f.block.Ver = 3
 	}
 
 	if f.block.Header.BaseFeePerGas != nil {
@@ -407,6 +493,35 @@ func getActivePrecompilesChecker(rules params.Rules) func(addr common.Address) b
 
 func (f *Firehose) OnBlockEnd(err error) {
 	firehoseInfo("block ending (err=%s)", errorView(err))
+
+	if err == nil {
+		if f.blockReorderOrdinal {
+			f.reorderIsolatedTransactionsAndOrdinals()
+		}
+
+		f.ensureInBlockAndNotInTrx()
+		f.printBlockToFirehose(f.block, f.blockFinality)
+	} else {
+		// An error occurred, could have happen in transaction/call context, we must not check if in trx/call, only check in block
+		f.ensureInBlock(0)
+	}
+
+	f.resetBlock()
+	f.resetTransaction()
+
+	firehoseInfo("block end")
+}
+
+func (f *Firehose) OnCosmosBlockEnd(event cosmostracing.CosmosEndBlockEvent, err error) {
+	firehoseInfo("block ending (err=%s)", errorView(err))
+	f.block.Hash = f.cosmosBlockHeader.Hash()
+	f.block.Header.LogsBloom = types.BytesToBloom(event.LogsBloom).Bytes()
+
+	f.block.Size = 10 // todo: find the right size
+
+	for _, trx := range f.block.TransactionTraces {
+		f.block.Header.GasUsed += trx.GasUsed
+	}
 
 	if err == nil {
 		if f.blockReorderOrdinal {
@@ -1506,7 +1621,7 @@ func (f *Firehose) flushToFirehose(in []byte) {
 	fmt.Fprint(writer, errstr)
 }
 
-// TestingBuffer is an internal method only used for testing purposes
+// InternalTestingBuffer TestingBuffer is an internal method only used for testing purposes
 // that should never be used in production code.
 //
 // There is no public api guaranteed for this method.
@@ -1514,7 +1629,6 @@ func (f *Firehose) InternalTestingBuffer() *bytes.Buffer {
 	return f.testingBuffer
 }
 
-// FIXME: Create a unit test that is going to fail as soon as any header is added in
 func newBlockHeaderFromChainHeader(h *types.Header, td *pbeth.BigInt) *pbeth.BlockHeader {
 	var withdrawalsHashBytes []byte
 	if hash := h.WithdrawalsHash; hash != nil {
@@ -1556,6 +1670,36 @@ func newBlockHeaderFromChainHeader(h *types.Header, td *pbeth.BigInt) *pbeth.Blo
 
 	if pbHead.Difficulty == nil {
 		pbHead.Difficulty = &pbeth.BigInt{Bytes: []byte{0}}
+	}
+
+	return pbHead
+}
+
+// FIXME: Create a unit test that is going to fail as soon as any header is added in
+func newBlockHeaderFromCosmosChainHeader(h cosmostypes.Header, coinbase []byte, gasLimit uint64, baseFee *big.Int) *pbeth.BlockHeader {
+	difficulty := firehoseBigIntFromNative(new(big.Int).SetInt64(0))
+
+	pbHead := &pbeth.BlockHeader{
+		Hash:   h.Hash().Bytes(),
+		Number: uint64(h.Height),
+		//ParentHash:       h.LastBlockID.Hash,
+		UncleHash:        types.EmptyUncleHash.Bytes(), // No uncles in Tendermint
+		Coinbase:         coinbase,
+		StateRoot:        h.AppHash,
+		TransactionsRoot: h.DataHash,
+		ReceiptRoot:      types.EmptyRootHash.Bytes(),
+		LogsBloom:        types.EmptyVerkleHash.Bytes(), // TODO: fix this
+		Difficulty:       difficulty,
+		TotalDifficulty:  difficulty,
+		GasLimit:         gasLimit,
+		Timestamp:        timestamppb.New(h.Time),
+		ExtraData:        []byte("0x"),
+		MixHash:          common.Hash{}.Bytes(),
+		Nonce:            types.BlockNonce{}.Uint64(), // PoW specific,
+		BaseFeePerGas:    firehoseBigIntFromNative(baseFee),
+
+		// Only set on Polygon fork(s)
+		TxDependency: nil,
 	}
 
 	return pbHead

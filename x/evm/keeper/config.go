@@ -16,13 +16,13 @@
 package keeper
 
 import (
+	"github.com/ethereum/go-ethereum/eth/tracers"
 	"math/big"
 
 	errorsmod "cosmossdk.io/errors"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/eth/tracers"
 	"github.com/ethereum/go-ethereum/params"
 	rpctypes "github.com/evmos/ethermint/rpc/types"
 	"github.com/evmos/ethermint/x/evm/statedb"
@@ -132,7 +132,12 @@ func (k *Keeper) EVMConfig(ctx sdk.Context, chainID *big.Int, txHash common.Hash
 	}
 
 	if k.evmTracer != nil {
-		cfg.Tracer = k.evmTracer
+		t := &tracers.Tracer{
+			Hooks:     k.evmTracer.Hooks,
+			GetResult: nil,
+			Stop:      nil,
+		}
+		cfg.Tracer = t
 	}
 
 	return cfg, nil

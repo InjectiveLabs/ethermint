@@ -16,6 +16,7 @@
 package keeper
 
 import (
+	cosmostracing "github.com/evmos/ethermint/x/evm/tracing"
 	"math/big"
 
 	errorsmod "cosmossdk.io/errors"
@@ -28,7 +29,6 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/eth/tracers"
 	"github.com/ethereum/go-ethereum/params"
 	ethermint "github.com/evmos/ethermint/types"
 	"github.com/evmos/ethermint/x/evm/statedb"
@@ -67,7 +67,7 @@ type Keeper struct {
 	eip155ChainID *big.Int
 
 	// EVM Tracer
-	evmTracer *tracers.Tracer
+	evmTracer *cosmostracing.Hooks
 
 	// EVM Hooks for tx post-processing
 	hooks types.EvmHooks
@@ -204,7 +204,7 @@ func (k *Keeper) PostTxProcessing(ctx sdk.Context, msg *core.Message, receipt *e
 	return k.hooks.PostTxProcessing(ctx, msg, receipt)
 }
 
-func (k *Keeper) SetTracer(tracer *tracers.Tracer) {
+func (k *Keeper) SetTracer(tracer *cosmostracing.Hooks) {
 	k.evmTracer = tracer
 }
 
