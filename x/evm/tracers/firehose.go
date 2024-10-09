@@ -510,7 +510,6 @@ func (f *Firehose) OnCosmosBlockEnd(event cosmostracing.CosmosEndBlockEvent, err
 		// move the parentHash to the previous block
 		f.lastParentBlockHash = f.lastBlockHash
 		f.block.Header.ParentHash = f.lastParentBlockHash
-		fmt.Println("doudou: parent block hash", f.block.Header.ParentHash)
 
 		f.cosmosBlockHeader.LastBlockID = cosmostypes.BlockID{
 			Hash: f.lastParentBlockHash,
