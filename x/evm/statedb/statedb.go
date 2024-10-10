@@ -569,7 +569,11 @@ func (s *StateDB) SetStorage(addr common.Address, storage Storage) {
 	stateObject := s.getOrNewStateObject(addr)
 	stateObject.SetStorage(storage)
 
-	// TODO: should we call a tracer hook here?
+	if s.evmTracer != nil && s.evmTracer.OnStorageChange != nil {
+		for key, value := range storage {
+			s.evmTracer.OnStorageChange(addr, key, s.GetState(addr, key), value)
+		}
+	}
 }
 
 // Suicide marks the given account as suicided.
