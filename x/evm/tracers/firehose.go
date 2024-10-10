@@ -418,6 +418,8 @@ func (f *Firehose) OnCosmosBlockStart(event cosmostracing.CosmosStartBlockEvent)
 	gasLimit := event.GasLimit
 	baseFee := event.BaseFee
 
+	// The block version seems to be 11 on each block, is there a way to get it?
+	header.Version.Block = 11
 	f.cosmosBlockHeader = header
 
 	firehoseInfo("block start (number=%d)", header.Height)
@@ -1670,6 +1672,11 @@ func newBlockHeaderFromChainHeader(h *types.Header, td *pbeth.BigInt) *pbeth.Blo
 func newBlockHeaderFromCosmosChainHeader(h *cosmostypes.Header, coinbase []byte, gasLimit uint64, baseFee *big.Int) *pbeth.BlockHeader {
 	difficulty := firehoseBigIntFromNative(new(big.Int).SetInt64(0))
 
+	parentBlockHash := h.LastBlockID.Hash
+	if h.Height == 1 {
+		parentBlockHash = common.Hash{}.Bytes()
+	}
+
 	transactionRoot := types.EmptyRootHash.Bytes()
 	if h.DataHash != nil {
 		transactionRoot = h.DataHash
@@ -1678,7 +1685,7 @@ func newBlockHeaderFromCosmosChainHeader(h *cosmostypes.Header, coinbase []byte,
 	// the hash is calculated by the end block as we are missing some data
 	// same applies with the parent hash
 	pbHead := &pbeth.BlockHeader{
-		ParentHash:       h.LastBlockID.Hash,
+		ParentHash:       parentBlockHash,
 		Number:           uint64(h.Height),
 		UncleHash:        types.EmptyUncleHash.Bytes(), // No uncles in Tendermint
 		Coinbase:         coinbase,

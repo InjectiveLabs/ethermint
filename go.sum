@@ -238,10 +238,10 @@ github.com/DataDog/sketches-go v1.4.2 h1:gppNudE9d19cQ98RYABOetxIhpTCl4m7CnbRZjv
 github.com/DataDog/sketches-go v1.4.2/go.mod h1:xJIXldczJyyjnbDop7ZZcLxJdV3+7Kra7H1KMgpgkLk=
 github.com/DataDog/zstd v1.5.5 h1:oWf5W7GtOLgp6bciQYDmhHHjdhYkALu6S/5Ni9ZgSvQ=
 github.com/DataDog/zstd v1.5.5/go.mod h1:g4AWEaM3yOg3HYfnJ3YIawPnVdXJh9QME85blwSAmyw=
-github.com/InjectiveLabs/cometbft v0.38.11-inj-3 h1:82i3DrztJxVs1R45wVTUKZ5+8g+HT5KPexu6mB92jaE=
-github.com/InjectiveLabs/cometbft v0.38.11-inj-3/go.mod h1:WreBJKC7CtZ9cNsb5p6uNpfCBwNWDu+risVb58GTLfY=
-github.com/InjectiveLabs/cosmos-sdk v0.50.10-0.20241009150651-2a2420946b5a h1:MnASvPFfkvCBN7UQrmGyD101lJHubbE96gLwZ6TQlWs=
-github.com/InjectiveLabs/cosmos-sdk v0.50.10-0.20241009150651-2a2420946b5a/go.mod h1:VoDw+J+Xx6cQz/VUbXLXwQNm9S75a8zWAvKrXDqD3u4=
+github.com/InjectiveLabs/cometbft v0.38.11-inj-4 h1:WBL3gGcPEYscqpIH+r1IkytmMhoLt247JtO71AlZ/iQ=
+github.com/InjectiveLabs/cometbft v0.38.11-inj-4/go.mod h1:WreBJKC7CtZ9cNsb5p6uNpfCBwNWDu+risVb58GTLfY=
+github.com/InjectiveLabs/cosmos-sdk v0.50.10-0.20241010141128-de2b5199b23e h1:fFy5HkvhhCcNsnkwM2pJf7+TiIWs6nOgCct6FLMI9i4=
+github.com/InjectiveLabs/cosmos-sdk v0.50.10-0.20241010141128-de2b5199b23e/go.mod h1:DAbn+xjBNvDKXf/XThMI/UADLyJi55Jo+ILfJ0NE4tQ=
 github.com/InjectiveLabs/cosmos-sdk/client/v2 v2.0.0-20240904140803-b4127ecb5410 h1:gUiyEHPKz+S1vOb3DhVSpUvSreUR7Z/8Hv3OXws/7LA=
 github.com/InjectiveLabs/cosmos-sdk/client/v2 v2.0.0-20240904140803-b4127ecb5410/go.mod h1:CZcL41HpJPOOayTCO28j8weNBQprG+SRiKX39votypo=
 github.com/InjectiveLabs/cosmos-sdk/store v0.0.0-20240904140803-b4127ecb5410 h1:6ai8wHEoV48EACjoGpqW8uxuwCcZfYMBU7FEoC0R0lI=
