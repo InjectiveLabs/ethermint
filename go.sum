@@ -238,8 +238,6 @@ github.com/DataDog/sketches-go v1.4.2 h1:gppNudE9d19cQ98RYABOetxIhpTCl4m7CnbRZjv
 github.com/DataDog/sketches-go v1.4.2/go.mod h1:xJIXldczJyyjnbDop7ZZcLxJdV3+7Kra7H1KMgpgkLk=
 github.com/DataDog/zstd v1.5.5 h1:oWf5W7GtOLgp6bciQYDmhHHjdhYkALu6S/5Ni9ZgSvQ=
 github.com/DataDog/zstd v1.5.5/go.mod h1:g4AWEaM3yOg3HYfnJ3YIawPnVdXJh9QME85blwSAmyw=
-github.com/InjectiveLabs/cometbft v0.38.11-inj-4 h1:WBL3gGcPEYscqpIH+r1IkytmMhoLt247JtO71AlZ/iQ=
-github.com/InjectiveLabs/cometbft v0.38.11-inj-4/go.mod h1:WreBJKC7CtZ9cNsb5p6uNpfCBwNWDu+risVb58GTLfY=
 github.com/InjectiveLabs/cosmos-sdk v0.50.10-0.20241010141128-de2b5199b23e h1:fFy5HkvhhCcNsnkwM2pJf7+TiIWs6nOgCct6FLMI9i4=
 github.com/InjectiveLabs/cosmos-sdk v0.50.10-0.20241010141128-de2b5199b23e/go.mod h1:DAbn+xjBNvDKXf/XThMI/UADLyJi55Jo+ILfJ0NE4tQ=
 github.com/InjectiveLabs/cosmos-sdk/client/v2 v2.0.0-20240904140803-b4127ecb5410 h1:gUiyEHPKz+S1vOb3DhVSpUvSreUR7Z/8Hv3OXws/7LA=
@@ -1121,6 +1119,8 @@ github.com/status-im/keycard-go v0.2.0/go.mod h1:wlp8ZLbsmrF6g6WjugPAx+IzoLrkdf9
 github.com/streadway/amqp v0.0.0-20190404075320-75d898a42a94/go.mod h1:AZpEONHx3DKn8O/DFsRAY58/XVQiIPMTMB1SddzLXVw=
 github.com/streadway/amqp v0.0.0-20190827072141-edfb9018d271/go.mod h1:AZpEONHx3DKn8O/DFsRAY58/XVQiIPMTMB1SddzLXVw=
 github.com/streadway/handy v0.0.0-20190108123426-d5acb3125c2a/go.mod h1:qNTQ5P5JnDBl6z3cMAg/SywNDC5ABu5ApDIw6lUbRmI=
+github.com/streamingfast/cometbft v0.38.11-inj-5 h1:6nEaRsiBtihMb3QUhcgATQzCG7V+DKxFGH707hA1Ju8=
+github.com/streamingfast/cometbft v0.38.11-inj-5/go.mod h1:WreBJKC7CtZ9cNsb5p6uNpfCBwNWDu+risVb58GTLfY=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/objx v0.1.1/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/objx v0.4.0/go.mod h1:YvHI0jy2hoMjB+UWwv71VJQ9isScKT/TqJzVSSt89Yw=
