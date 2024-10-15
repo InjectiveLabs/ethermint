@@ -136,6 +136,7 @@ func NewCosmosTracingHooksFromFirehose(hooks *tracing.Hooks, firehose *Firehose)
 
 		OnCosmosBlockStart: firehose.OnCosmosBlockStart,
 		OnCosmosBlockEnd:   firehose.OnCosmosBlockEnd,
+		OnCosmosTxStart:    firehose.OnCosmosTxStart,
 	}
 }
 
@@ -265,6 +266,7 @@ func newFirehose(config *FirehoseConfig) (*Firehose, error) {
 
 		// Transaction state
 		transactionLogIndex: 0,
+		transactionIsolated: false,
 
 		// Call state
 		callStack:               NewCallStack(),
@@ -303,7 +305,7 @@ func (f *Firehose) newIsolatedTransactionTracer(tracerID string) *Firehose {
 
 		// Transaction state
 		transactionLogIndex: 0,
-		transactionIsolated: true,
+		transactionIsolated: false,
 
 		// Call state
 		callStack:               NewCallStack(),
@@ -654,7 +656,23 @@ func (f *Firehose) OnTxStart(evm *tracing.VMContext, tx *types.Transaction, from
 	f.onTxStart(tx, tx.Hash(), from, to)
 }
 
-// onTxStart is used internally a two places, in the normal "tracer" and in the "OnGenesisBlock",
+func (f *Firehose) OnCosmosTxStart(evm *tracing.VMContext, tx *types.Transaction, hash common.Hash, from common.Address) {
+	firehoseInfo("trx start (tracer=%s hash=%s type=%d gas=%d isolated=%t input=%s)", f.tracerID, tx.Hash(), tx.Type(), tx.Gas(), f.transactionIsolated, inputView(tx.Data()))
+
+	f.ensureInBlockAndNotInTrxAndNotInCall()
+
+	f.evm = evm
+	var to common.Address
+	if tx.To() == nil {
+		to = crypto.CreateAddress(from, evm.StateDB.GetNonce(from))
+	} else {
+		to = *tx.To()
+	}
+
+	f.onTxStart(tx, hash, from, to)
+}
+
+// onTxStart is used internally two places, in the normal "tracer" and in the "OnGenesisBlock",
 // we manually pass some override to the `tx` because genesis block has a different way of creating
 // the transaction that wraps the genesis block.
 func (f *Firehose) onTxStart(tx *types.Transaction, hash common.Hash, from, to common.Address) {
@@ -692,18 +710,12 @@ func (f *Firehose) OnTxEnd(receipt *types.Receipt, err error) {
 	firehoseInfo("trx ending (tracer=%s, isolated=%t, error=%s)", f.tracerID, f.transactionIsolated, errorView(err))
 	f.ensureInBlockAndInTrx()
 
+	// TODO: we do nothing with the error here ???
+	// Shouldn't there be something that checks the type of error and sets the status of the transaction accordingly?
 	trxTrace := f.completeTransaction(receipt)
 
-	// In this case, we are in some kind of parallel processing and we must simply add the transaction
-	// to a transient storage (and not in the block directly). Adding it to the block will be done by the
-	// `OnTxCommit` callback.
 	if f.transactionIsolated {
-		f.transactionTransient = trxTrace
-
-		// We must not reset transaction here. In the isolated transaction tracer, the transaction is reset
-		// by the `OnTxReset` callback which comes from outside the tracer. Second, resetting the transaction
-		// also resets the [f.transactionTransient] field which is the one we want to keep on completion
-		// of an isolated transaction.
+		panic("isolated transactions are not supported")
 	} else {
 		f.block.TransactionTraces = append(f.block.TransactionTraces, trxTrace)
 
@@ -738,8 +750,6 @@ func (f *Firehose) completeTransaction(receipt *types.Receipt) *pbeth.Transactio
 		f.transaction.Receipt = newTxReceiptFromChain(receipt, f.transaction.Type)
 		f.transaction.Status = transactionStatusFromChainTxReceipt(receipt.Status)
 	}
-
-	// todo: in some blockchains, when there is not received, it means that the transaction is failed, what about here? should it be the same?
 
 	// It's possible that the transaction was reverted, but we still have a receipt, in that case, we must
 	// check the root call
@@ -804,7 +814,7 @@ func (f *Firehose) assignOrdinalAndIndexToReceiptLogs() {
 
 	trx := f.transaction
 
-	callLogs := []*pbeth.Log{}
+	var callLogs []*pbeth.Log
 	for _, call := range trx.Calls {
 		firehoseTrace("checking call (reverted=%t logs=%d)", call.StateReverted, len(call.Logs))
 		if call.StateReverted {

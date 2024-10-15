@@ -341,7 +341,6 @@ func (suite *StateDBTestSuite) TestTracer_Nonce() {
 			t.OnNonceChange = func(addr common.Address, prev, new uint64) {
 				nonceChanges = append(nonceChanges, new)
 			}
-			keeper.SetTracer(t)
 			db := statedb.New(ctx, keeper, emptyTxConfig)
 			db.SetTracer(t)
 			tc.malleate(db)
@@ -1079,7 +1078,6 @@ func (suite *StateDBTestSuite) TestTracer_SetStorage() {
 	t.OnStorageChange = func(addr common.Address, slot common.Hash, prev, new common.Hash) {
 		sChanges = append(sChanges, newStorageChange(addr.String(), slot.String(), prev.String(), new.String()))
 	}
-	keeper.SetTracer(t)
 	stateDB := statedb.New(ctx, keeper, emptyTxConfig)
 	stateDB.SetTracer(t)
 

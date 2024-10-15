@@ -16,7 +16,7 @@
 package keeper
 
 import (
-	"github.com/ethereum/go-ethereum/eth/tracers"
+	cosmostracing "github.com/evmos/ethermint/x/evm/tracing"
 	"math/big"
 
 	errorsmod "cosmossdk.io/errors"
@@ -53,7 +53,7 @@ type EVMBlockConfig struct {
 type EVMConfig struct {
 	*EVMBlockConfig
 	TxConfig       statedb.TxConfig
-	Tracer         *tracers.Tracer
+	Tracer         *cosmostracing.Hooks
 	DebugTrace     bool
 	Overrides      *rpctypes.StateOverride
 	BlockOverrides *rpctypes.BlockOverrides
@@ -131,13 +131,19 @@ func (k *Keeper) EVMConfig(ctx sdk.Context, chainID *big.Int, txHash common.Hash
 		TxConfig:       txConfig,
 	}
 
+	return cfg, nil
+}
+
+// EVMConfigWithTracer creates the EVMConfig based on current state and returns the evmTracer
+func (k *Keeper) EVMConfigWithTracer(ctx sdk.Context, chainID *big.Int, txHash common.Hash) (*EVMConfig, error) {
+	cfg, err := k.EVMConfig(ctx, chainID, txHash)
+
+	if err != nil {
+		return nil, err
+	}
+
 	if k.evmTracer != nil {
-		t := &tracers.Tracer{
-			Hooks:     k.evmTracer.Hooks,
-			GetResult: nil,
-			Stop:      nil,
-		}
-		cfg.Tracer = t
+		cfg.Tracer = k.evmTracer
 	}
 
 	return cfg, nil

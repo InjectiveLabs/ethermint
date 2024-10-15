@@ -123,7 +123,7 @@ func NewWithParams(ctx sdk.Context, keeper Keeper, txConfig TxConfig, evmDenom s
 		cacheMS = parentCacheMS.Clone()
 		commitMS = func() { parentCacheMS.Restore(cacheMS) }
 	} else {
-		// in unit test, it could be run with a uncached multistore
+		// in unit test, it could be run with an uncached multistore
 		if cacheMS, ok = ctx.MultiStore().CacheWrap().(cachemulti.Store); !ok {
 			panic("expect the CacheWrap result to be cachemulti.Store")
 		}
@@ -148,7 +148,9 @@ func NewWithParams(ctx sdk.Context, keeper Keeper, txConfig TxConfig, evmDenom s
 }
 
 func (s *StateDB) SetTracer(tracer *cosmostracing.Hooks) {
-	s.evmTracer = tracer
+	if s.evmTracer == nil {
+		s.evmTracer = tracer
+	}
 }
 
 func (s *StateDB) NativeEvents() sdk.Events {
@@ -167,6 +169,10 @@ func (s *StateDB) AddLog(log *ethtypes.Log) {
 	log.TxIndex = s.txConfig.TxIndex
 	log.Index = s.txConfig.LogIndex + uint(len(s.logs))
 	s.logs = append(s.logs, log)
+
+	if s.evmTracer != nil && s.evmTracer.OnLog != nil {
+		s.evmTracer.OnLog(log)
+	}
 }
 
 // Logs returns the logs of current transaction.

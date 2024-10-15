@@ -17,6 +17,7 @@ package keeper
 
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	cosmostracing "github.com/evmos/ethermint/x/evm/tracing"
 )
 
 // BeginBlock sets the sdk Context and EIP155 chain id to the Keeper.
@@ -29,8 +30,9 @@ func (k *Keeper) BeginBlock(ctx sdk.Context) error {
 		return err
 	}
 
-	if k.evmTracer != nil && k.evmTracer.OnCosmosBlockStart != nil {
-		k.evmTracer.OnCosmosBlockStart(
+	// In the case of BeginBlock hook, we can extract the tracer from the context
+	if tracer := cosmostracing.GetCtxBlockchainTracer(ctx); tracer != nil && tracer.OnCosmosBlockStart != nil {
+		tracer.OnCosmosBlockStart(
 			ToCosmosStartBlockEvent(
 				k,
 				ctx,
@@ -50,10 +52,9 @@ func (k *Keeper) EndBlock(ctx sdk.Context) error {
 	k.CollectTxBloom(ctx)
 	k.RemoveParamsCache(ctx)
 
-	if k.evmTracer != nil && k.evmTracer.OnCosmosBlockEnd != nil {
-		defer func() {
-			k.evmTracer.OnCosmosBlockEnd(ToCosmosEndBlockEvent(k, ctx), nil)
-		}()
+	// In the case of EndBlock hook, we can extract the tracer from the context
+	if tracer := cosmostracing.GetCtxBlockchainTracer(ctx); tracer != nil && tracer.OnCosmosBlockEnd != nil {
+		tracer.OnCosmosBlockEnd(ToCosmosEndBlockEvent(k, ctx), nil)
 	}
 
 	return nil

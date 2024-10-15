@@ -139,9 +139,9 @@ func (k Keeper) ChainID() *big.Int {
 	return k.eip155ChainID
 }
 
-func (k *Keeper) InitChainer() {
-	if k.evmTracer != nil && k.evmTracer.OnBlockchainInit != nil {
-		k.evmTracer.OnBlockchainInit(evmtypes.DefaultChainConfig().EthereumConfig(k.ChainID()))
+func (k *Keeper) InitChainer(ctx sdk.Context) {
+	if tracer := cosmostracing.GetCtxBlockchainTracer(ctx); tracer != nil && tracer.OnBlockchainInit != nil {
+		tracer.OnBlockchainInit(evmtypes.DefaultChainConfig().EthereumConfig(k.ChainID()))
 	}
 }
 
