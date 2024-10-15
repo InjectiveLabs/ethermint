@@ -80,7 +80,7 @@ func (k *Keeper) EndBlock(ctx sdk.Context) error {
 	}()
 
 	ctx.EventManager().EmitEvent(sdk.NewEvent(
-		"block_gas",
+		types.EventTypeBlockGas,
 		sdk.NewAttribute("height", fmt.Sprintf("%d", ctx.BlockHeight())),
 		sdk.NewAttribute("amount", fmt.Sprintf("%d", gasWanted)),
 	))
