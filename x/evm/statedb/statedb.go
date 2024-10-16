@@ -214,7 +214,7 @@ func (s *StateDB) Empty(addr common.Address) bool {
 
 // GetBalance retrieves the balance from the given address or 0 if object not found
 func (s *StateDB) GetBalance(addr common.Address) *uint256.Int {
-	bal := s.keeper.GetBalance(s.ctx, sdk.AccAddress(addr.Bytes()), s.evmDenom)
+	bal := s.keeper.GetBalance(s.ctx, addr.Bytes(), s.evmDenom)
 	return uint256.MustFromBig(bal)
 }
 

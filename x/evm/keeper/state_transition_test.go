@@ -641,7 +641,8 @@ func (suite *StateTransitionTestSuite) TestApplyMessage() {
 	suite.Require().False(res.Failed())
 }
 
-func (suite *StateTransitionTestSuite) TestApplyMessageTracer() {
+// TODO: add TestApplyTransactionWithTracer()
+func (suite *StateTransitionTestSuite) TestApplyMessageWithConfigTracer() {
 	expectedGasUsed := params.TxGas
 	var msg *core.Message
 
@@ -649,19 +650,18 @@ func (suite *StateTransitionTestSuite) TestApplyMessageTracer() {
 	suite.Ctx = suite.Ctx.WithCometInfo(NewMockCometInfo())
 	suite.Ctx = suite.Ctx.WithConsensusParams(*testutil.DefaultConsensusParams)
 
-	_, err := suite.App.EvmKeeper.EVMConfig(suite.Ctx, big.NewInt(9000), common.Hash{})
+	t, err := types.NewFirehoseCosmosLiveTracer()
+	require.NoError(suite.T(), err)
+	suite.Ctx = cosmostracing.SetCtxBlockchainTracer(suite.Ctx, t)
+	suite.App.EvmKeeper.SetTracer(t)
+
+	cfgWithTracer, err := suite.App.EvmKeeper.EVMConfigWithTracer(suite.Ctx, big.NewInt(9000), common.Hash{})
 	suite.Require().NoError(err)
 
 	keeperParams := suite.App.EvmKeeper.GetParams(suite.Ctx)
 	chainCfg := keeperParams.ChainConfig.EthereumConfig(suite.App.EvmKeeper.ChainID())
-	rules := chainCfg.Rules(big.NewInt(suite.Ctx.BlockHeight()), chainCfg.MergeNetsplitBlock != nil, uint64(suite.Ctx.BlockHeader().Time.Unix()))
 	signer := ethtypes.LatestSignerForChainID(suite.App.EvmKeeper.ChainID())
-	tracer := types.NewTracer("", msg, rules)
 	vmdb := suite.StateDB()
-
-	t, err := types.NewFirehoseCosmosLiveTracer()
-	require.NoError(suite.T(), err)
-	suite.Ctx = cosmostracing.SetCtxBlockchainTracer(suite.Ctx, t)
 
 	onCosmosTxStartHookCalled := false
 	onGasChangedHookCalled := false
@@ -714,7 +714,7 @@ func (suite *StateTransitionTestSuite) TestApplyMessageTracer() {
 	// manually call begin block
 	err = suite.App.EvmKeeper.BeginBlock(suite.Ctx)
 	suite.Require().NoError(err)
-	res, err := suite.App.EvmKeeper.ApplyMessage(suite.Ctx, msg, tracer, true)
+	res, err := suite.App.EvmKeeper.ApplyMessageWithConfig(suite.Ctx, msg, cfgWithTracer, true)
 
 	suite.Require().NoError(err)
 	suite.Require().Equal(expectedGasUsed, res.GasUsed)

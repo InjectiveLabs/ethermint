@@ -276,7 +276,7 @@ replace (
 	cosmossdk.io/x/tx => github.com/InjectiveLabs/cosmos-sdk/x/tx v0.0.0-20240904140803-b4127ecb5410
 
 	github.com/cometbft/cometbft => github.com/Injectivelabs/cometbft v0.38.11-inj-5
-	github.com/cosmos/cosmos-sdk => github.com/InjectiveLabs/cosmos-sdk v0.50.10-0.20241010141128-de2b5199b23e
+	github.com/cosmos/cosmos-sdk => github.com/InjectiveLabs/cosmos-sdk v0.50.10-0.20241014111010-224eb95c9eb1
 	github.com/ethereum/go-ethereum => github.com/InjectiveLabs/go-ethereum v1.9.22-0.20240923100242-5e28e23d353e
 	nhooyr.io/websocket => github.com/coder/websocket v1.8.10 // replaced as instructed here:https://coder.com/blog/websocket
 )

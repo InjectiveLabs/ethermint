@@ -364,14 +364,24 @@ func (k *Keeper) ApplyMessageWithConfig(
 		Data:     msg.Data,
 	})
 
-	if cfg.Tracer != nil && cfg.Tracer.OnCosmosTxStart != nil {
+	if cfg.Tracer != nil {
 		stateDB.SetTracer(cfg.Tracer)
-		cfg.Tracer.OnCosmosTxStart(
-			evm.GetVMContext(),
-			tx,
-			cfg.TxConfig.TxHash,
-			msg.From,
-		)
+
+		// If a cosmos tracer is set, the OnCosmosTxStart takes precedence over OnTxStart
+		if cfg.Tracer.OnCosmosTxStart != nil {
+			cfg.Tracer.OnCosmosTxStart(
+				evm.GetVMContext(),
+				tx,
+				cfg.TxConfig.TxHash,
+				msg.From,
+			)
+		} else if cfg.Tracer.OnTxStart != nil {
+			cfg.Tracer.OnTxStart(
+				evm.GetVMContext(),
+				tx,
+				msg.From,
+			)
+		}
 	}
 
 	rules := cfg.Rules
