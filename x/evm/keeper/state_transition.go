@@ -18,7 +18,6 @@ package keeper
 import (
 	"bytes"
 	"fmt"
-	cosmostracing "github.com/evmos/ethermint/x/evm/tracing"
 	"math/big"
 	"sort"
 
@@ -73,11 +72,6 @@ func (k *Keeper) NewEVM(
 		cfg.BlockOverrides.Apply(&blockCtx)
 	}
 	txCtx := core.NewEVMTxContext(msg)
-
-	// Set Config Tracer if it was not already initialized
-	if tracer := cosmostracing.GetCtxBlockchainTracer(ctx); tracer != nil {
-		cfg.Tracer = tracer
-	}
 
 	vmConfig := k.VMConfig(ctx, cfg)
 	contracts := make(map[common.Address]vm.PrecompiledContract)
@@ -239,6 +233,24 @@ func (k *Keeper) ApplyTransaction(ctx sdk.Context, msgEth *types.MsgEthereumTx) 
 		}
 	}
 
+	defer func() {
+		// These errors are not vm related, so they should not be passed to the vm tracer
+		if errorsmod.IsOf(applyMessageErr, types.ErrCreateDisabled, types.ErrCallDisabled) {
+			return
+		}
+
+		if applyMessageErr != nil && applyMessageErr.Error() != configOverridesErrDesc {
+			return
+		}
+
+		if cfg.Tracer != nil && cfg.Tracer.OnTxEnd != nil {
+			cfg.Tracer.OnTxEnd(
+				receipt,
+				applyMessageErr,
+			)
+		}
+	}()
+
 	// refund gas in order to match the Ethereum gas consumption instead of the default SDK one.
 	if err = k.RefundGas(ctx, msg, msg.GasLimit-res.GasUsed, cfg.Params.EvmDenom); err != nil {
 		return nil, errorsmod.Wrapf(err, "failed to refund leftover gas to sender %s", msg.From)
@@ -251,18 +263,6 @@ func (k *Keeper) ApplyTransaction(ctx sdk.Context, msgEth *types.MsgEthereumTx) 
 
 	// reset the gas meter for current cosmos transaction
 	k.ResetGasMeterAndConsumeGas(ctx, totalGasUsed)
-
-	defer func() {
-		// These errors are not vm related, so they should not be passed to the vm tracer
-		if !errorsmod.IsOf(applyMessageErr, types.ErrCreateDisabled, types.ErrCallDisabled) && (applyMessageErr != nil && applyMessageErr.Error() != configOverridesErrDesc) {
-			if cfg.Tracer != nil && cfg.Tracer.OnTxEnd != nil {
-				cfg.Tracer.OnTxEnd(
-					receipt,
-					applyMessageErr,
-				)
-			}
-		}
-	}()
 
 	return res, nil
 }
