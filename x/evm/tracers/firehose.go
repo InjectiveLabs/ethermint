@@ -657,7 +657,7 @@ func (f *Firehose) OnTxStart(evm *tracing.VMContext, tx *types.Transaction, from
 }
 
 func (f *Firehose) OnCosmosTxStart(evm *tracing.VMContext, tx *types.Transaction, hash common.Hash, from common.Address) {
-	firehoseInfo("trx start (tracer=%s hash=%s type=%d gas=%d isolated=%t input=%s)", f.tracerID, tx.Hash(), tx.Type(), tx.Gas(), f.transactionIsolated, inputView(tx.Data()))
+	firehoseInfo("trx start (tracer=%s hash=%s type=%d gas=%d isolated=%t input=%s)", f.tracerID, hash, tx.Type(), tx.Gas(), f.transactionIsolated, inputView(tx.Data()))
 
 	f.ensureInBlockAndNotInTrxAndNotInCall()
 
@@ -884,8 +884,8 @@ func (f *Firehose) OnCallEnter(depth int, typ byte, from common.Address, to comm
 	if isRootCall := depth == 0; isRootCall {
 		callType = rootCallType(opCode == vm.CREATE)
 	} else {
-		// The invokation for vm.SELFDESTRUCT is called while already in another call and is recorded specially
-		// in the Geth tracer and generates `OnEnter/OnExit` callbacks. However in Firehose, self destruction
+		// The invocation for vm.SELFDESTRUCT is called while already in another call and is recorded specially
+		// in the Geth tracer and generates `OnEnter/OnExit` callbacks. However in Firehose, self-destruction
 		// simply sets the call as having called suicided so there is no extra call.
 		//
 		// So we ignore `OnEnter/OnExit` callbacks for `SELFDESTRUCT` opcode, we ignore it here and set
@@ -1349,6 +1349,8 @@ func (f *Firehose) OnCodeChange(a common.Address, prevCodeHash common.Hash, prev
 
 func (f *Firehose) OnStorageChange(a common.Address, k, prev, new common.Hash) {
 	f.ensureInBlockAndInTrxAndInCall()
+
+	firehoseTrace("on storage change (addr=%s, key=%s, prev=%s, new=%s)", a.String(), k.String(), prev.String(), new.String())
 
 	activeCall := f.callStack.Peek()
 	activeCall.StorageChanges = append(activeCall.StorageChanges, &pbeth.StorageChange{
