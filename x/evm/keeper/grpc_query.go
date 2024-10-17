@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	cosmostracing "github.com/evmos/ethermint/x/evm/tracing"
 	"math/big"
 	"time"
 
@@ -719,7 +720,9 @@ func (k *Keeper) prepareTrace(
 		cfg.BlockOverrides = &blockOverrides
 	}
 
-	cfg.Tracer = tracer
+	cfg.Tracer = &cosmostracing.Hooks{
+		Hooks: tracer.Hooks,
+	}
 	cfg.DebugTrace = true
 	res, err := k.ApplyMessageWithConfig(ctx, msg, cfg, commitMessage)
 	if err != nil {
