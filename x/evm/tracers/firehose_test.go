@@ -393,12 +393,11 @@ func TestFirehose_reorderIsolatedTransactionsAndOrdinals(t *testing.T) {
 			ordinals := maps.Keys(seenOrdinals)
 			slices.Sort(ordinals)
 
-			// All ordinals should be in stricly increasing order
-			prev := -1
+			// All ordinals should be in strictly increasing order
+			prev := 0
 			for _, ordinal := range ordinals {
-				if prev != -1 {
-					assert.Equal(t, prev+1, int(ordinal), "Ordinal %d is not in sequence", ordinal)
-				}
+				assert.Equal(t, prev+1, int(ordinal), "Ordinal %d is not in sequence", ordinal)
+				prev = int(ordinal)
 			}
 		})
 	}

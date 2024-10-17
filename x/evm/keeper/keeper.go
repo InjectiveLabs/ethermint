@@ -33,7 +33,6 @@ import (
 	ethermint "github.com/evmos/ethermint/types"
 	"github.com/evmos/ethermint/x/evm/statedb"
 	"github.com/evmos/ethermint/x/evm/types"
-	evmtypes "github.com/evmos/ethermint/x/evm/types"
 )
 
 // CustomContractFn defines a custom precompiled contract generator with ctx, rules and returns a precompiled contract.
@@ -141,7 +140,7 @@ func (k Keeper) ChainID() *big.Int {
 
 func (k *Keeper) InitChainer(ctx sdk.Context) {
 	if tracer := cosmostracing.GetCtxBlockchainTracer(ctx); tracer != nil && tracer.OnBlockchainInit != nil {
-		tracer.OnBlockchainInit(evmtypes.DefaultChainConfig().EthereumConfig(k.ChainID()))
+		tracer.OnBlockchainInit(types.DefaultChainConfig().EthereumConfig(k.ChainID()))
 	}
 }
 
@@ -204,6 +203,7 @@ func (k *Keeper) PostTxProcessing(ctx sdk.Context, msg *core.Message, receipt *e
 	return k.hooks.PostTxProcessing(ctx, msg, receipt)
 }
 
+// SetTracer should only be called during initialization
 func (k *Keeper) SetTracer(tracer *cosmostracing.Hooks) {
 	k.evmTracer = tracer
 }

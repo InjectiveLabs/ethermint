@@ -136,7 +136,6 @@ func (suite *HandlerTestSuite) TestHandleMsgEthereumTx() {
 
 	for _, tc := range testCases {
 		suite.Run(tc.msg, func() {
-			// todo: it seems we are missing a hook on a balance change? or something like that?
 			suite.SetupTest() // reset
 			//nolint
 			tc.malleate()

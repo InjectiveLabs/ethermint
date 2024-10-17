@@ -552,34 +552,40 @@ func (s *StateDB) SetCode(addr common.Address, code []byte) {
 		oldCode := s.GetCode(addr)
 		stateObject.SetCode(crypto.Keccak256Hash(code), code)
 
+		var oldCodeHash common.Hash
+		if oldCode != nil {
+			oldCodeHash = crypto.Keccak256Hash(oldCode)
+		}
+
 		if s.evmTracer != nil && s.evmTracer.OnCodeChange != nil {
-			s.evmTracer.OnCodeChange(addr, crypto.Keccak256Hash(oldCode), oldCode, crypto.Keccak256Hash(code), code)
+			s.evmTracer.OnCodeChange(addr, oldCodeHash, oldCode, crypto.Keccak256Hash(code), code)
 		}
 	}
 }
 
 // SetState sets the contract state.
 func (s *StateDB) SetState(addr common.Address, key, value common.Hash) {
-	stateObject := s.getOrNewStateObject(addr)
-	stateObject.SetState(key, value)
-
 	if s.evmTracer != nil && s.evmTracer.OnStorageChange != nil {
 		s.evmTracer.OnStorageChange(addr, key, s.GetState(addr, key), value)
 	}
+
+	stateObject := s.getOrNewStateObject(addr)
+	stateObject.SetState(key, value)
 }
 
 // SetStorage replaces the entire storage for the specified account with given
 // storage. This function should only be used for debugging and the mutations
 // must be discarded afterward.
 func (s *StateDB) SetStorage(addr common.Address, storage Storage) {
-	stateObject := s.getOrNewStateObject(addr)
-	stateObject.SetStorage(storage)
-
 	if s.evmTracer != nil && s.evmTracer.OnStorageChange != nil {
 		for key, value := range storage {
 			s.evmTracer.OnStorageChange(addr, key, s.GetState(addr, key), value)
 		}
 	}
+
+	stateObject := s.getOrNewStateObject(addr)
+	stateObject.SetStorage(storage)
+
 }
 
 // Suicide marks the given account as suicided.
