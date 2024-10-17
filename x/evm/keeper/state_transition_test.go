@@ -641,7 +641,70 @@ func (suite *StateTransitionTestSuite) TestApplyMessage() {
 	suite.Require().False(res.Failed())
 }
 
-// TODO: add TestApplyTransactionWithTracer()
+func (suite *StateTransitionTestSuite) TestApplyTransactionWithTracer() {
+	expectedGasUsed := params.TxGas
+	var msg *types.MsgEthereumTx
+
+	suite.SetupTest()
+	suite.Ctx = suite.Ctx.WithCometInfo(NewMockCometInfo())
+	suite.Ctx = suite.Ctx.WithConsensusParams(*testutil.DefaultConsensusParams)
+
+	t, err := types.NewFirehoseCosmosLiveTracer()
+	require.NoError(suite.T(), err)
+	suite.Ctx = cosmostracing.SetCtxBlockchainTracer(suite.Ctx, t)
+	suite.App.EvmKeeper.SetTracer(t)
+
+	keeperParams := suite.App.EvmKeeper.GetParams(suite.Ctx)
+	chainCfg := keeperParams.ChainConfig.EthereumConfig(suite.App.EvmKeeper.ChainID())
+	signer := ethtypes.LatestSignerForChainID(suite.App.EvmKeeper.ChainID())
+	vmdb := suite.StateDB()
+
+	onCosmosTxStartHookCalled := false
+	onTxEndHookCalled := false
+
+	startTxHook := t.OnCosmosTxStart
+	endTxHook := t.OnTxEnd
+
+	t.OnCosmosTxStart = func(vm *tracing.VMContext, tx *ethtypes.Transaction, hash common.Hash, from common.Address) {
+		// call original hook
+		startTxHook(vm, tx, hash, from)
+		onCosmosTxStartHookCalled = true
+	}
+	t.OnTxEnd = func(receipt *ethtypes.Receipt, err error) {
+		// call original hook
+		endTxHook(receipt, err)
+		onTxEndHookCalled = true
+	}
+
+	// manually call on blockchain init
+	t.OnBlockchainInit(chainCfg)
+	suite.StateDB().SetTracer(t)
+
+	msg, _, err = newEthMsgTx(
+		vmdb.GetNonce(suite.Address),
+		suite.Address,
+		suite.Signer,
+		signer,
+		ethtypes.LegacyTxType,
+		nil,
+		nil,
+	)
+	suite.Require().NoError(err)
+
+	// manually call begin block
+	err = suite.App.EvmKeeper.BeginBlock(suite.Ctx)
+	suite.Require().NoError(err)
+
+	res, err := suite.App.EvmKeeper.ApplyTransaction(suite.Ctx, msg)
+
+	suite.Require().NoError(err)
+	suite.Require().Equal(expectedGasUsed, res.GasUsed)
+	suite.Require().False(res.Failed())
+
+	suite.Require().True(onCosmosTxStartHookCalled)
+	suite.Require().True(onTxEndHookCalled)
+}
+
 func (suite *StateTransitionTestSuite) TestApplyMessageWithConfigTracer() {
 	expectedGasUsed := params.TxGas
 	var msg *core.Message
