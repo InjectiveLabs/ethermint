@@ -710,7 +710,6 @@ func (f *Firehose) OnTxEnd(receipt *types.Receipt, err error) {
 	firehoseInfo("trx ending (tracer=%s, isolated=%t, error=%s)", f.tracerID, f.transactionIsolated, errorView(err))
 	f.ensureInBlockAndInTrx()
 
-	// TODO: we do nothing with the error here ???
 	// Shouldn't there be something that checks the type of error and sets the status of the transaction accordingly?
 	trxTrace := f.completeTransaction(receipt)
 
@@ -1681,7 +1680,7 @@ func newBlockHeaderFromChainHeader(h *types.Header, td *pbeth.BigInt) *pbeth.Blo
 }
 
 // FIXME: Create a unit test that is going to fail as soon as any header is added in
-func newBlockHeaderFromCosmosChainHeader(h *cosmostypes.Header, coinbase []byte, gasLimit uint64, baseFee *big.Int) *pbeth.BlockHeader {
+func newBlockHeaderFromCosmosChainHeader(h *cosmostypes.Header, coinbase common.Address, gasLimit uint64, baseFee *big.Int) *pbeth.BlockHeader {
 	difficulty := firehoseBigIntFromNative(new(big.Int).SetInt64(0))
 
 	parentBlockHash := h.LastBlockID.Hash
@@ -1700,7 +1699,7 @@ func newBlockHeaderFromCosmosChainHeader(h *cosmostypes.Header, coinbase []byte,
 		ParentHash:       parentBlockHash,
 		Number:           uint64(h.Height),
 		UncleHash:        types.EmptyUncleHash.Bytes(), // No uncles in Tendermint
-		Coinbase:         coinbase,
+		Coinbase:         coinbase.Bytes(),
 		StateRoot:        h.AppHash,
 		TransactionsRoot: transactionRoot,
 		ReceiptRoot:      types.EmptyRootHash.Bytes(),
@@ -2420,7 +2419,7 @@ func (m Memory) GetPtr(offset, size int64) []byte {
 		return nil
 	}
 
-	if len(m) >= (int(offset) + int(size)) {
+	if offset >= 0 && size >= 0 && int64(len(m)) >= offset+size {
 		return m[offset : offset+size]
 	}
 
@@ -2431,6 +2430,10 @@ func (m Memory) GetPtr(offset, size int64) []byte {
 	// executed so the memory will be of the correct size.
 	//
 	// In this situation, we must pad with zeroes when the memory is not big enough.
+	if offset >= int64(len(m)) {
+		return make([]byte, size)
+	}
+
 	reminder := m[offset:]
 	return append(reminder, make([]byte, int(size)-len(reminder))...)
 }

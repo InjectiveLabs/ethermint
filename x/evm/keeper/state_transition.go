@@ -17,6 +17,7 @@ package keeper
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"math/big"
 	"sort"
@@ -40,7 +41,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 )
 
-var configOverridesErrDesc = "failed to apply state override"
+var ErrConfigOverrides = errors.New("failed to apply state override")
 
 // NewEVM generates a go-ethereum VM from the provided Message fields and the chain parameters
 // (ChainConfig and module Params). It additionally sets the validator operator address as the
@@ -189,6 +190,20 @@ func (k *Keeper) ApplyTransaction(ctx sdk.Context, msgEth *types.MsgEthereumTx) 
 	// pass true to commit the StateDB
 	res, applyMessageErr := k.ApplyMessageWithConfig(tmpCtx, msg, cfg, true)
 	if applyMessageErr != nil {
+
+		// Any of these errors will not impact the evm state / execution flow
+		if errorsmod.IsOf(applyMessageErr, types.ErrCreateDisabled, types.ErrCallDisabled, ErrConfigOverrides) {
+			return nil, errorsmod.Wrap(applyMessageErr, "failed to apply ethereum core message, issue with create, call or config overrides")
+		}
+
+		// Call onTxEnd tracer hook with an empty receipt
+		if cfg.Tracer != nil && cfg.Tracer.OnTxEnd != nil {
+			cfg.Tracer.OnTxEnd(
+				nil,
+				applyMessageErr,
+			)
+		}
+
 		return nil, errorsmod.Wrap(applyMessageErr, "failed to apply ethereum core message")
 	}
 
@@ -234,19 +249,10 @@ func (k *Keeper) ApplyTransaction(ctx sdk.Context, msgEth *types.MsgEthereumTx) 
 	}
 
 	defer func() {
-		// These errors are not vm related, so they should not be passed to the vm tracer
-		if errorsmod.IsOf(applyMessageErr, types.ErrCreateDisabled, types.ErrCallDisabled) {
-			return
-		}
-
-		if applyMessageErr != nil && applyMessageErr.Error() != configOverridesErrDesc {
-			return
-		}
-
 		if cfg.Tracer != nil && cfg.Tracer.OnTxEnd != nil {
 			cfg.Tracer.OnTxEnd(
 				receipt,
-				applyMessageErr,
+				errors.New(res.VmError),
 			)
 		}
 	}()
@@ -347,7 +353,7 @@ func (k *Keeper) ApplyMessageWithConfig(
 	var evm *vm.EVM
 	if cfg.Overrides != nil {
 		if err := cfg.Overrides.Apply(stateDB); err != nil {
-			return nil, errorsmod.Wrap(err, configOverridesErrDesc)
+			return nil, errorsmod.Wrap(ErrConfigOverrides, err.Error())
 		}
 	}
 
@@ -412,7 +418,8 @@ func (k *Keeper) ApplyMessageWithConfig(
 	stateDB.Prepare(rules, msg.From, cfg.CoinBase, msg.To, vm.DefaultActivePrecompiles(rules), msg.AccessList)
 
 	if contractCreation {
-		// FIXME: also why do we want to set the nonce in the statedb twice here?
+		// Why do we want to set the nonce in the statedb twice here?
+
 		// take over the nonce management from evm:
 		// - reset sender's nonce to msg.Nonce() before calling evm.
 		// - increase sender's nonce by one no matter the result.

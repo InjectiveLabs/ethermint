@@ -36,7 +36,7 @@ func TestFirehoseCallStack_Push(t *testing.T) {
 		actions []actionRunner
 	}{
 		{
-			"push/pop emtpy", []actionRunner{
+			"push/pop empty", []actionRunner{
 				push(&pbeth.Call{}),
 				pop(),
 				check(func(t *testing.T, s *CallStack) {
@@ -84,7 +84,7 @@ func Test_validateKnownTransactionTypes(t *testing.T) {
 	}{
 		{"legacy", 0, true, nil},
 		{"access_list", 1, true, nil},
-		{"inexistant", 255, false, nil},
+		{"nonexistent", 255, false, nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -352,7 +352,7 @@ func TestFirehose_reorderIsolatedTransactionsAndOrdinals(t *testing.T) {
 			goldenUpdate := os.Getenv("GOLDEN_UPDATE") == "true"
 			goldenPath := tt.expectedBlockFile
 
-			if !goldenUpdate && !fileExits(t, goldenPath) {
+			if !goldenUpdate && !fileExists(t, goldenPath) {
 				t.Fatalf("the golden file %q does not exist, re-run with 'GOLDEN_UPDATE=true go test ./... -run %q' to generate the intial version", goldenPath, t.Name())
 			}
 
@@ -367,7 +367,8 @@ func TestFirehose_reorderIsolatedTransactionsAndOrdinals(t *testing.T) {
 			require.NoError(t, err)
 
 			expectedBlock := &pbeth.Block{}
-			protojson.Unmarshal(expected, expectedBlock)
+			err = protojson.Unmarshal(expected, expectedBlock)
+			require.NoError(t, err)
 
 			if !proto.Equal(expectedBlock, f.block) {
 				assert.Equal(t, expectedBlock, f.block, "Run 'GOLDEN_UPDATE=true go test ./... -run %q' to update golden file", t.Name())
@@ -434,7 +435,7 @@ var b = big.NewInt
 var empty, from, to = common.HexToAddress("00"), common.HexToAddress("01"), common.HexToAddress("02")
 var hex2Hash = common.HexToHash
 
-func fileExits(t *testing.T, path string) bool {
+func fileExists(t *testing.T, path string) bool {
 	t.Helper()
 	stat, err := os.Stat(path)
 	return err == nil && !stat.IsDir()
@@ -484,6 +485,7 @@ func TestMemory_GetPtr(t *testing.T) {
 		{"memory is just a bit too small", Memory([]byte{1, 2, 3}), args{0, 4}, []byte{1, 2, 3, 0}},
 		{"memory is flushed with request", Memory([]byte{1, 2, 3, 4}), args{0, 4}, []byte{1, 2, 3, 4}},
 		{"memory is just a bit too big", Memory([]byte{1, 2, 3, 4, 5}), args{0, 4}, []byte{1, 2, 3, 4}},
+		{"offset beyond memory length", Memory([]byte{1, 2, 3}), args{5, 2}, []byte{0, 0}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -33,7 +33,7 @@ type CosmosStartBlockEvent struct {
 	CosmosHeader *types.Header
 	BaseFee      *big.Int
 	GasLimit     uint64
-	Coinbase     []byte
+	Coinbase     common.Address
 	Finalized    *ethtypes.Header
 }
 

@@ -5,6 +5,7 @@ import (
 	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	cosmostypes "github.com/cometbft/cometbft/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/evmos/ethermint/x/evm/tracing"
 	"github.com/evmos/ethermint/x/evm/types"
@@ -23,7 +24,7 @@ func BlocksBloom(k *Keeper, ctx sdk.Context) *big.Int {
 	return bloom
 }
 
-func ToCosmosStartBlockEvent(k *Keeper, ctx sdk.Context, coinbaseBytes []byte, blockHeader cmtproto.Header) tracing.CosmosStartBlockEvent {
+func ToCosmosStartBlockEvent(k *Keeper, ctx sdk.Context, coinbaseAddr common.Address, blockHeader cmtproto.Header) tracing.CosmosStartBlockEvent {
 	// ignore the errors as we are sure that the block header is valid
 	h, _ := cosmostypes.HeaderFromProto(&blockHeader)
 	h.ValidatorsHash = ctx.CometInfo().GetValidatorsHash()
@@ -46,7 +47,7 @@ func ToCosmosStartBlockEvent(k *Keeper, ctx sdk.Context, coinbaseBytes []byte, b
 		CosmosHeader: &h,
 		BaseFee:      baseFee,
 		GasLimit:     gasLimit,
-		Coinbase:     coinbaseBytes,
+		Coinbase:     coinbaseAddr,
 		Finalized:    finalizedHeader,
 	}
 }

@@ -36,7 +36,7 @@ func (k *Keeper) BeginBlock(ctx sdk.Context) error {
 			ToCosmosStartBlockEvent(
 				k,
 				ctx,
-				evmBlockConfig.CoinBase.Bytes(),
+				evmBlockConfig.CoinBase,
 				ctx.BlockHeader(),
 			),
 		)
