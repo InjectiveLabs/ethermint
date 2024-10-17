@@ -104,7 +104,7 @@ func (suite *HandlerTestSuite) TestHandleMsgEthereumTx() {
 			true,
 		},
 		{
-			"insufficient balance", // todo: shouldn't this be insufficient gas
+			"insufficient balance",
 			func() {
 				tx = types.NewTxContract(suite.chainID, 0, big.NewInt(100), 0, big.NewInt(10000), nil, nil, nil, nil)
 				suite.signTx(tx)
