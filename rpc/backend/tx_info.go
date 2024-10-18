@@ -72,7 +72,8 @@ func (b *Backend) GetTransactionByHash(txHash common.Hash) (*rpctypes.RPCTransac
 			}
 		}
 	}
-	// if we still unable to find the eth tx index, return error, shouldn't happen.
+
+	// if we are still unable to find the eth tx index, return error, shouldn't happen.
 	if res.EthTxIndex == -1 {
 		return nil, errors.New("can't find index of ethereum tx")
 	}

@@ -17,6 +17,7 @@ package keeper
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"math/big"
 	"sort"
@@ -33,7 +34,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/core/tracing"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -41,13 +41,15 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 )
 
+var ErrConfigOverrides = errors.New("failed to apply state override")
+
 // NewEVM generates a go-ethereum VM from the provided Message fields and the chain parameters
 // (ChainConfig and module Params). It additionally sets the validator operator address as the
 // coinbase address to make it available for the COINBASE opcode, even though there is no
 // beneficiary of the coinbase transaction (since we're not mining).
 //
 // NOTE: the RANDOM opcode is currently not supported since it requires
-// RANDAO implementation. See https://github.com/evmos/ethermint/pull/1520#pullrequestreview-1200504697
+// RANDOM implementation. See https://github.com/evmos/ethermint/pull/1520#pullrequestreview-1200504697
 // for more information.
 func (k *Keeper) NewEVM(
 	ctx sdk.Context,
@@ -71,9 +73,7 @@ func (k *Keeper) NewEVM(
 		cfg.BlockOverrides.Apply(&blockCtx)
 	}
 	txCtx := core.NewEVMTxContext(msg)
-	if cfg.Tracer == nil {
-		cfg.Tracer = k.Tracer(msg, cfg.Rules)
-	}
+
 	vmConfig := k.VMConfig(ctx, cfg)
 	contracts := make(map[common.Address]vm.PrecompiledContract)
 	active := make([]common.Address, 0)
@@ -151,7 +151,7 @@ func (k Keeper) GetHashFn(ctx sdk.Context) vm.GetHashFunc {
 	}
 }
 
-// ApplyTransaction runs and attempts to perform a state transition with the given transaction (i.e Message), that will
+// ApplyTransaction runs and attempts to perform a state transition with the given transaction (i.e. Message), that will
 // only be persisted (committed) to the underlying KVStore if the transaction does not fail.
 //
 // # Gas tracking
@@ -170,13 +170,13 @@ func (k Keeper) GetHashFn(ctx sdk.Context) vm.GetHashFunc {
 // For relevant discussion see: https://github.com/cosmos/cosmos-sdk/discussions/9072
 func (k *Keeper) ApplyTransaction(ctx sdk.Context, msgEth *types.MsgEthereumTx) (*types.MsgEthereumTxResponse, error) {
 	ethTx := msgEth.AsTransaction()
-	cfg, err := k.EVMConfig(ctx, k.eip155ChainID, ethTx.Hash())
+	cfg, err := k.EVMConfigWithTracer(ctx, k.eip155ChainID, ethTx.Hash())
 	if err != nil {
 		return nil, errorsmod.Wrap(err, "failed to load evm config")
 	}
 
 	msg := msgEth.AsMessage(cfg.BaseFee)
-	// snapshot to contain the tx processing and post processing in same scope
+	// snapshot to contain the tx processing and post-processing in same scope
 	var commit func()
 	tmpCtx := ctx
 	if k.hooks != nil {
@@ -188,9 +188,23 @@ func (k *Keeper) ApplyTransaction(ctx sdk.Context, msgEth *types.MsgEthereumTx) 
 	}
 
 	// pass true to commit the StateDB
-	res, err := k.ApplyMessageWithConfig(tmpCtx, msg, cfg, true)
-	if err != nil {
-		return nil, errorsmod.Wrap(err, "failed to apply ethereum core message")
+	res, applyMessageErr := k.ApplyMessageWithConfig(tmpCtx, msg, cfg, true)
+	if applyMessageErr != nil {
+
+		// Any of these errors will not impact the evm state / execution flow
+		if errorsmod.IsOf(applyMessageErr, types.ErrCreateDisabled, types.ErrCallDisabled, ErrConfigOverrides) {
+			return nil, errorsmod.Wrap(applyMessageErr, "failed to apply ethereum core message, issue with create, call or config overrides")
+		}
+
+		// Call onTxEnd tracer hook with an empty receipt
+		if cfg.Tracer != nil && cfg.Tracer.OnTxEnd != nil {
+			cfg.Tracer.OnTxEnd(
+				nil,
+				applyMessageErr,
+			)
+		}
+
+		return nil, errorsmod.Wrap(applyMessageErr, "failed to apply ethereum core message")
 	}
 
 	logs := types.LogsToEthereum(res.Logs)
@@ -225,7 +239,7 @@ func (k *Keeper) ApplyTransaction(ctx sdk.Context, msgEth *types.MsgEthereumTx) 
 			res.VmError = types.ErrPostTxProcessing.Error()
 			k.Logger(ctx).Error("tx post processing failed", "error", err)
 
-			// If the tx failed in post processing hooks, we should clear the logs
+			// If the tx failed in post-processing hooks, we should clear the logs
 			res.Logs = nil
 		} else if commit != nil {
 			// PostTxProcessing is successful, commit the tmpCtx
@@ -236,6 +250,15 @@ func (k *Keeper) ApplyTransaction(ctx sdk.Context, msgEth *types.MsgEthereumTx) 
 	} else {
 		receipt.Status = ethtypes.ReceiptStatusFailed
 	}
+
+	defer func() {
+		if cfg.Tracer != nil && cfg.Tracer.OnTxEnd != nil {
+			cfg.Tracer.OnTxEnd(
+				receipt,
+				errors.New(res.VmError),
+			)
+		}
+	}()
 
 	// refund gas in order to match the Ethereum gas consumption instead of the default SDK one.
 	if err = k.RefundGas(ctx, msg, msg.GasLimit-res.GasUsed, cfg.Params.EvmDenom); err != nil {
@@ -249,6 +272,7 @@ func (k *Keeper) ApplyTransaction(ctx sdk.Context, msgEth *types.MsgEthereumTx) 
 
 	// reset the gas meter for current cosmos transaction
 	k.ResetGasMeterAndConsumeGas(ctx, totalGasUsed)
+
 	return res, nil
 }
 
@@ -259,7 +283,6 @@ func (k *Keeper) ApplyMessage(ctx sdk.Context, msg *core.Message, tracer *tracer
 		return nil, errorsmod.Wrap(err, "failed to load evm config")
 	}
 
-	cfg.Tracer = tracer
 	return k.ApplyMessageWithConfig(ctx, msg, cfg, commit)
 }
 
@@ -315,7 +338,7 @@ func (k *Keeper) ApplyMessageWithConfig(
 	msg *core.Message,
 	cfg *EVMConfig,
 	commit bool,
-) (*types.MsgEthereumTxResponse, error) {
+) (resp *types.MsgEthereumTxResponse, err error) {
 	var (
 		ret     []byte // return bytes from evm execution
 		gasUsed uint64
@@ -333,51 +356,41 @@ func (k *Keeper) ApplyMessageWithConfig(
 	var evm *vm.EVM
 	if cfg.Overrides != nil {
 		if err := cfg.Overrides.Apply(stateDB); err != nil {
-			return nil, errorsmod.Wrap(err, "failed to apply state override")
+			return nil, errorsmod.Wrap(ErrConfigOverrides, err.Error())
 		}
 	}
+
 	evm = k.NewEVM(ctx, msg, cfg, stateDB)
 	leftoverGas := msg.GasLimit
 	sender := vm.AccountRef(msg.From)
-	// Allow the tracer captures the tx level events, mainly the gas consumption.
-	vmCfg := evm.Config
-	if vmCfg.Tracer != nil {
-		if cfg.DebugTrace {
-			// msg.GasPrice should have been set to effective gas price
-			stateDB.SubBalance(
-				sender.Address(),
-				uint256.MustFromBig(new(big.Int).Mul(msg.GasPrice, new(big.Int).SetUint64(msg.GasLimit))),
-				tracing.BalanceChangeUnspecified,
+
+	tx := ethtypes.NewTx(&ethtypes.LegacyTx{
+		Nonce:    msg.Nonce,
+		Gas:      msg.GasLimit,
+		GasPrice: msg.GasPrice,
+		To:       msg.To,
+		Value:    msg.Value,
+		Data:     msg.Data,
+	})
+
+	if cfg.Tracer != nil {
+		stateDB.SetTracer(cfg.Tracer)
+
+		// If a cosmos tracer is set, the OnCosmosTxStart takes precedence over OnTxStart
+		if cfg.Tracer.OnCosmosTxStart != nil {
+			cfg.Tracer.OnCosmosTxStart(
+				evm.GetVMContext(),
+				tx,
+				cfg.TxConfig.TxHash,
+				msg.From,
 			)
-			stateDB.SetNonce(sender.Address(), stateDB.GetNonce(sender.Address())+1)
+		} else if cfg.Tracer.OnTxStart != nil {
+			cfg.Tracer.OnTxStart(
+				evm.GetVMContext(),
+				tx,
+				msg.From,
+			)
 		}
-		vmCfg.Tracer.OnTxStart(
-			evm.GetVMContext(),
-			ethtypes.NewTx(&ethtypes.LegacyTx{
-				Nonce:    msg.Nonce,
-				Gas:      msg.GasLimit,
-				GasPrice: msg.GasPrice,
-				To:       msg.To,
-				Value:    msg.Value,
-				Data:     msg.Data,
-			}),
-			msg.From,
-		)
-		defer func() {
-			if cfg.DebugTrace {
-				stateDB.AddBalance(
-					sender.Address(),
-					uint256.MustFromBig(new(big.Int).Mul(msg.GasPrice, new(big.Int).SetUint64(leftoverGas))),
-					tracing.BalanceChangeUnspecified,
-				)
-			}
-			vmCfg.Tracer.OnTxEnd(
-				&ethtypes.Receipt{
-					GasUsed: gasUsed,
-				},
-				vmErr,
-			)
-		}()
 	}
 
 	rules := cfg.Rules
@@ -408,6 +421,8 @@ func (k *Keeper) ApplyMessageWithConfig(
 	stateDB.Prepare(rules, msg.From, cfg.CoinBase, msg.To, vm.DefaultActivePrecompiles(rules), msg.AccessList)
 
 	if contractCreation {
+		// Why do we want to set the nonce in the statedb twice here?
+
 		// take over the nonce management from evm:
 		// - reset sender's nonce to msg.Nonce() before calling evm.
 		// - increase sender's nonce by one no matter the result.
@@ -416,6 +431,12 @@ func (k *Keeper) ApplyMessageWithConfig(
 		stateDB.SetNonce(sender.Address(), msg.Nonce+1)
 	} else {
 		ret, leftoverGas, vmErr = evm.Call(sender, *msg.To, msg.Data, leftoverGas, uint256.MustFromBig(msg.Value))
+
+		// if they do not want to make the nonce set to the statedb or do we want to manually call the onNonceChange hook
+		//stateDB.SetNonce(sender.Address(), msg.Nonce+1)
+		if cfg.Tracer != nil && cfg.Tracer.OnNonceChange != nil {
+			cfg.Tracer.OnNonceChange(sender.Address(), msg.Nonce, msg.Nonce+1)
+		}
 	}
 
 	refundQuotient := params.RefundQuotient
@@ -462,6 +483,7 @@ func (k *Keeper) ApplyMessageWithConfig(
 	}
 
 	gasUsed = sdkmath.LegacyMaxDec(minimumGasUsed, sdkmath.LegacyNewDec(int64(temporaryGasUsed))).TruncateInt().Uint64()
+
 	// reset leftoverGas, to be used by the tracer
 	leftoverGas = msg.GasLimit - gasUsed
 
