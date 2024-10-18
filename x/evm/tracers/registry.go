@@ -1,19 +1,11 @@
 package tracers
 
-var GlobalLiveTracerRegistry = NewLiveTracerRegistry()
-
 type LiveTracerRegistry interface {
 	GetFactoryByID(id string) (BlockchainTracerFactory, bool)
 	Register(id string, factory BlockchainTracerFactory)
 }
 
 var _ LiveTracerRegistry = (*liveTracerRegistry)(nil)
-
-func NewLiveTracerRegistry() LiveTracerRegistry {
-	return &liveTracerRegistry{
-		tracers: make(map[string]BlockchainTracerFactory),
-	}
-}
 
 type liveTracerRegistry struct {
 	tracers map[string]BlockchainTracerFactory

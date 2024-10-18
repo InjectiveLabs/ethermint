@@ -68,7 +68,6 @@ func init() {
 	staticFirehoseChainValidationOnInit()
 
 	tracers.LiveDirectory.Register("firehose", newFirehoseTracer)
-	GlobalLiveTracerRegistry.Register("firehose", NewCosmosFirehoseTracer)
 
 	// Those 2 are defined but not used in this branch, they are kept because used in other branches
 	// so it's easier to keep them here and suppress the warning by faking a usage.
