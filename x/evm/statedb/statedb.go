@@ -17,9 +17,10 @@ package statedb
 
 import (
 	"fmt"
-	cosmostracing "github.com/evmos/ethermint/x/evm/tracing"
 	"math/big"
 	"sort"
+
+	cosmostracing "github.com/evmos/ethermint/x/evm/tracing"
 
 	errorsmod "cosmossdk.io/errors"
 	sdkmath "cosmossdk.io/math"
@@ -170,7 +171,7 @@ func (s *StateDB) AddLog(log *ethtypes.Log) {
 	log.Index = s.txConfig.LogIndex + uint(len(s.logs))
 	s.logs = append(s.logs, log)
 
-	if s.evmTracer != nil && s.evmTracer.OnLog != nil {
+	if log != nil && s.evmTracer != nil && s.evmTracer.OnLog != nil {
 		s.evmTracer.OnLog(log)
 	}
 }
