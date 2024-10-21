@@ -49,7 +49,7 @@ var ErrConfigOverrides = errors.New("failed to apply state override")
 // beneficiary of the coinbase transaction (since we're not mining).
 //
 // NOTE: the RANDOM opcode is currently not supported since it requires
-// RANDOM implementation. See https://github.com/evmos/ethermint/pull/1520#pullrequestreview-1200504697
+// RANDAO implementation. See https://github.com/evmos/ethermint/pull/1520#pullrequestreview-1200504697
 // for more information.
 func (k *Keeper) NewEVM(
 	ctx sdk.Context,
