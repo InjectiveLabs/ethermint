@@ -1,13 +1,14 @@
 package keeper_test
 
 import (
-	"cosmossdk.io/core/comet"
 	"fmt"
-	"github.com/ethereum/go-ethereum/core/tracing"
-	cosmostracing "github.com/evmos/ethermint/x/evm/tracing"
 	"math"
 	"math/big"
 	"testing"
+
+	"cosmossdk.io/core/comet"
+	"github.com/ethereum/go-ethereum/core/tracing"
+	cosmostracing "github.com/evmos/ethermint/x/evm/tracing"
 
 	sdkmath "cosmossdk.io/math"
 	storetypes "cosmossdk.io/store/types"
@@ -718,7 +719,7 @@ func (suite *StateTransitionTestSuite) TestApplyMessageWithConfigTracer() {
 	suite.Ctx = cosmostracing.SetCtxBlockchainTracer(suite.Ctx, t)
 	suite.App.EvmKeeper.SetTracer(t)
 
-	cfgWithTracer, err := suite.App.EvmKeeper.EVMConfigWithTracer(suite.Ctx, big.NewInt(9000), common.Hash{})
+	cfgWithTracer, err := suite.App.EvmKeeper.EVMConfig(suite.Ctx, big.NewInt(9000), common.Hash{})
 	suite.Require().NoError(err)
 
 	keeperParams := suite.App.EvmKeeper.GetParams(suite.Ctx)
