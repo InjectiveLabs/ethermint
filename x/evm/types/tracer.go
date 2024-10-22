@@ -17,21 +17,19 @@ package types
 
 import (
 	"fmt"
-	cosmostracing "github.com/evmos/ethermint/x/evm/tracing"
 	"os"
-
-	"github.com/ethereum/go-ethereum/eth/tracers"
-	cosmostracers "github.com/evmos/ethermint/x/evm/tracers"
-
-	_ "github.com/ethereum/go-ethereum/eth/tracers/live"
-	_ "github.com/evmos/ethermint/x/evm/tracers"
-
-	"github.com/ethereum/go-ethereum/eth/tracers/logger"
 
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/eth/tracers"
+	"github.com/ethereum/go-ethereum/eth/tracers/logger"
 	"github.com/ethereum/go-ethereum/params"
+
+	// importing the tracers package automatically triggers its init method which
+	// registers the firehose tracer in the LiveDirectory
+	cosmostracers "github.com/evmos/ethermint/x/evm/tracers"
+	cosmostracing "github.com/evmos/ethermint/x/evm/tracing"
 )
 
 const (
