@@ -72,17 +72,6 @@ func NewTracer(tracer string, msg *core.Message, rules params.Rules) *tracers.Tr
 	}
 }
 
-func NewLiveTracer(tracer string) (*tracers.Tracer, error) {
-	h, err := tracers.LiveDirectory.New(tracer, nil)
-	if err != nil {
-		return nil, fmt.Errorf("initializing live tracer %s: %w", tracer, err)
-	}
-
-	return &tracers.Tracer{
-		Hooks: h,
-	}, nil
-}
-
 func NewFirehoseCosmosLiveTracer() (*cosmostracing.Hooks, error) {
 	h, err := cosmostracers.NewCosmosFirehoseTracer(false)
 	if err != nil {
