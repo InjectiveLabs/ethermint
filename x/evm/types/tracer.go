@@ -60,8 +60,6 @@ func NewTracer(tracer string, msg *core.Message, rules params.Rules) *tracers.Tr
 		hooks = logger.NewMarkdownLogger(logCfg, os.Stdout).Hooks() // TODO: Stderr ?
 	case TracerStruct:
 		hooks = logger.NewStructLogger(logCfg).Hooks()
-	case Firehose:
-		hooks, _ = tracers.LiveDirectory.New("firehose", nil)
 	default:
 		// Use noop tracer by default
 		hooks, _ = tracers.LiveDirectory.New("noop", nil)
