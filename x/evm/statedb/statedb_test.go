@@ -33,7 +33,6 @@ import (
 	ethermint "github.com/evmos/ethermint/types"
 	evmkeeper "github.com/evmos/ethermint/x/evm/keeper"
 	"github.com/evmos/ethermint/x/evm/statedb"
-	"github.com/evmos/ethermint/x/evm/types"
 	evmtypes "github.com/evmos/ethermint/x/evm/types"
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"
@@ -171,7 +170,7 @@ func (suite *StateDBTestSuite) TestTracer_Balance() {
 		suite.Run(tc.name, func() {
 			var balanceChanges []balanceChange
 			raw, ctx, keeper := setupTestEnv(suite.T())
-			t, err := types.NewFirehoseCosmosLiveTracer()
+			t, err := evmtypes.NewFirehoseCosmosLiveTracer()
 			require.NoError(suite.T(), err)
 			t.OnBalanceChange = func(addr common.Address, prev, new *big.Int, reason ethtracing.BalanceChangeReason) {
 				balanceChanges = append(balanceChanges, balanceChange{prev.String(), new.String(), reason})
@@ -336,7 +335,7 @@ func (suite *StateDBTestSuite) TestTracer_Nonce() {
 		suite.Run(tc.name, func() {
 			var nonceChanges []uint64
 			_, ctx, keeper := setupTestEnv(suite.T())
-			t, err := types.NewFirehoseCosmosLiveTracer()
+			t, err := evmtypes.NewFirehoseCosmosLiveTracer()
 			require.NoError(suite.T(), err)
 			t.OnNonceChange = func(addr common.Address, prev, new uint64) {
 				nonceChanges = append(nonceChanges, new)
@@ -1073,7 +1072,7 @@ func (suite *StateDBTestSuite) TestTracer_SetStorage() {
 	var sChanges []storageChanges
 
 	_, ctx, keeper := setupTestEnv(suite.T())
-	t, err := types.NewFirehoseCosmosLiveTracer()
+	t, err := evmtypes.NewFirehoseCosmosLiveTracer()
 	require.NoError(suite.T(), err)
 	t.OnStorageChange = func(addr common.Address, slot common.Hash, prev, new common.Hash) {
 		sChanges = append(sChanges, newStorageChange(addr.String(), slot.String(), prev.String(), new.String()))
@@ -1207,7 +1206,7 @@ func setupTestEnv(t *testing.T) (storetypes.MultiStore, sdk.Context, *evmkeeper.
 
 	ctx, keeper := newTestKeeper(t, cms)
 	require.NoError(t, keeper.SetParams(ctx, evmtypes.Params{
-		EvmDenom: types.DefaultEVMDenom,
+		EvmDenom: evmtypes.DefaultEVMDenom,
 	}))
 	return cms, ctx, keeper
 }
