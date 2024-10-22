@@ -31,7 +31,7 @@ func (k *Keeper) BeginBlock(ctx sdk.Context) error {
 	}
 
 	// In the case of BeginBlock hook, we can extract the tracer from the context
-	if tracer := cosmostracing.GetCtxBlockchainTracer(ctx); tracer != nil && tracer.OnCosmosBlockStart != nil {
+	if tracer := cosmostracing.GetTracingHooks(ctx); tracer != nil && tracer.OnCosmosBlockStart != nil {
 		tracer.OnCosmosBlockStart(
 			ToCosmosStartBlockEvent(
 				k,
@@ -53,7 +53,7 @@ func (k *Keeper) EndBlock(ctx sdk.Context) error {
 	k.RemoveParamsCache(ctx)
 
 	// In the case of EndBlock hook, we can extract the tracer from the context
-	if tracer := cosmostracing.GetCtxBlockchainTracer(ctx); tracer != nil && tracer.OnCosmosBlockEnd != nil {
+	if tracer := cosmostracing.GetTracingHooks(ctx); tracer != nil && tracer.OnCosmosBlockEnd != nil {
 		tracer.OnCosmosBlockEnd(ToCosmosEndBlockEvent(k, ctx), nil)
 	}
 

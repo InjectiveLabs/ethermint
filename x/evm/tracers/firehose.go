@@ -8,8 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/ethereum/go-ethereum/eth/tracers"
-	cosmostracing "github.com/evmos/ethermint/x/evm/tracing"
 	"io"
 	"math/big"
 	"os"
@@ -22,6 +20,9 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/ethereum/go-ethereum/eth/tracers"
+	cosmostracing "github.com/evmos/ethermint/x/evm/tracing"
 
 	cosmostypes "github.com/cometbft/cometbft/types"
 	"github.com/ethereum/go-ethereum/common"

@@ -1,19 +1,16 @@
 package tracing
 
 import (
+	"math/big"
+
 	"github.com/cometbft/cometbft/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
-	"math/big"
 )
 
-type (
-	OnCosmosBlockStart func(CosmosStartBlockEvent)
-	OnCosmosBlockEnd   func(CosmosEndBlockEvent, error)
-	OnCosmosTxStart    func(evm *tracing.VMContext, tx *ethtypes.Transaction, txHash common.Hash, from common.Address)
-)
-
+// Hooks defines a Cosmos specific [tracing.Hooks] struct used to trace EVM
+// blocks and transactions.
 type Hooks struct {
 	*tracing.Hooks
 
@@ -28,6 +25,12 @@ type Hooks struct {
 	// is not the same as the one calculated by tx.Hash()
 	OnCosmosTxStart OnCosmosTxStart
 }
+
+type (
+	OnCosmosBlockStart func(CosmosStartBlockEvent)
+	OnCosmosBlockEnd   func(CosmosEndBlockEvent, error)
+	OnCosmosTxStart    func(evm *tracing.VMContext, tx *ethtypes.Transaction, txHash common.Hash, from common.Address)
+)
 
 type CosmosStartBlockEvent struct {
 	CosmosHeader *types.Header

@@ -652,7 +652,7 @@ func (suite *StateTransitionTestSuite) TestApplyTransactionWithTracer() {
 
 	t, err := types.NewFirehoseCosmosLiveTracer()
 	require.NoError(suite.T(), err)
-	suite.Ctx = cosmostracing.SetCtxBlockchainTracer(suite.Ctx, t)
+	suite.Ctx = cosmostracing.SetTracingHooks(suite.Ctx, t)
 	suite.App.EvmKeeper.SetTracer(t)
 
 	keeperParams := suite.App.EvmKeeper.GetParams(suite.Ctx)
@@ -716,7 +716,7 @@ func (suite *StateTransitionTestSuite) TestApplyMessageWithConfigTracer() {
 
 	t, err := types.NewFirehoseCosmosLiveTracer()
 	require.NoError(suite.T(), err)
-	suite.Ctx = cosmostracing.SetCtxBlockchainTracer(suite.Ctx, t)
+	suite.Ctx = cosmostracing.SetTracingHooks(suite.Ctx, t)
 	suite.App.EvmKeeper.SetTracer(t)
 
 	cfgWithTracer, err := suite.App.EvmKeeper.EVMConfig(suite.Ctx, big.NewInt(9000), common.Hash{})

@@ -16,8 +16,9 @@
 package keeper
 
 import (
-	cosmostracing "github.com/evmos/ethermint/x/evm/tracing"
 	"math/big"
+
+	cosmostracing "github.com/evmos/ethermint/x/evm/tracing"
 
 	errorsmod "cosmossdk.io/errors"
 	"cosmossdk.io/log"
@@ -139,7 +140,7 @@ func (k Keeper) ChainID() *big.Int {
 }
 
 func (k *Keeper) InitChainer(ctx sdk.Context) {
-	if tracer := cosmostracing.GetCtxBlockchainTracer(ctx); tracer != nil && tracer.OnBlockchainInit != nil {
+	if tracer := cosmostracing.GetTracingHooks(ctx); tracer != nil && tracer.OnBlockchainInit != nil {
 		tracer.OnBlockchainInit(types.DefaultChainConfig().EthereumConfig(k.ChainID()))
 	}
 }

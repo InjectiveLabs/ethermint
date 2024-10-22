@@ -2,21 +2,20 @@ package tracing
 
 import (
 	"context"
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
-type CtxBlockchainTracerKeyType string
+type BlockchainTracerKeyType string
 
-const CtxBlockchainTracerKey = CtxBlockchainTracerKeyType("evm_and_state_logger")
+const BlockchainTracerKey = BlockchainTracerKeyType("evm_and_state_logger")
 
-func SetCtxBlockchainTracer(ctx sdk.Context, logger *Hooks) sdk.Context {
-	return ctx.WithContext(context.WithValue(ctx.Context(), CtxBlockchainTracerKey, logger))
+func SetTracingHooks(ctx sdk.Context, hooks *Hooks) sdk.Context {
+	return ctx.WithContext(context.WithValue(ctx.Context(), BlockchainTracerKey, hooks))
 }
 
-// GetCtxBlockchainTracer function to get the Cosmos specific [tracing.Hooks] struct
-// used to trace EVM blocks and transactions.
-func GetCtxBlockchainTracer(ctx sdk.Context) *Hooks {
-	rawVal := ctx.Context().Value(CtxBlockchainTracerKey)
+func GetTracingHooks(ctx sdk.Context) *Hooks {
+	rawVal := ctx.Context().Value(BlockchainTracerKey)
 	if rawVal == nil {
 		return nil
 	}
@@ -25,12 +24,4 @@ func GetCtxBlockchainTracer(ctx sdk.Context) *Hooks {
 		return nil
 	}
 	return logger
-}
-
-func GetCtxEthTracingHooks(ctx sdk.Context) *Hooks {
-	if logger := GetCtxBlockchainTracer(ctx); logger != nil {
-		return logger
-	}
-
-	return nil
 }
