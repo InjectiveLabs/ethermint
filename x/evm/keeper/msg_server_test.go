@@ -108,11 +108,13 @@ func (suite *MsgServerTestSuite) TestEthereumTx() {
 			vmdb = suite.StateDB()
 
 			tc.malleate()
+
 			res, err := suite.App.EvmKeeper.EthereumTx(suite.Ctx, msg)
 			if tc.expErr != nil {
 				suite.Require().ErrorContains(err, tc.expErr.Error())
 				return
 			}
+
 			suite.Require().NoError(err)
 			suite.Require().Equal(expectedGasUsed, res.GasUsed)
 			suite.Require().False(res.Failed())

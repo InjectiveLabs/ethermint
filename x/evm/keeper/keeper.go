@@ -18,6 +18,8 @@ package keeper
 import (
 	"math/big"
 
+	cosmostracing "github.com/evmos/ethermint/x/evm/tracing"
+
 	errorsmod "cosmossdk.io/errors"
 	"cosmossdk.io/log"
 	storetypes "cosmossdk.io/store/types"
@@ -28,7 +30,6 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/eth/tracers"
 	"github.com/ethereum/go-ethereum/params"
 	ethermint "github.com/evmos/ethermint/types"
 	"github.com/evmos/ethermint/x/evm/statedb"
@@ -65,8 +66,8 @@ type Keeper struct {
 	// chain ID number obtained from the context's chain id
 	eip155ChainID *big.Int
 
-	// Tracer used to collect execution traces from the EVM transaction execution
-	tracer string
+	// EVM Tracer
+	evmTracer *cosmostracing.Hooks
 
 	// EVM Hooks for tx post-processing
 	hooks types.EvmHooks
@@ -85,7 +86,6 @@ func NewKeeper(
 	bankKeeper types.BankKeeper,
 	sk types.StakingKeeper,
 	fmk types.FeeMarketKeeper,
-	tracer string,
 	ss paramstypes.Subspace,
 	customContractFns []CustomContractFn,
 ) *Keeper {
@@ -109,7 +109,6 @@ func NewKeeper(
 		feeMarketKeeper:   fmk,
 		storeKey:          storeKey,
 		objectKey:         objectKey,
-		tracer:            tracer,
 		ss:                ss,
 		customContractFns: customContractFns,
 	}
@@ -138,6 +137,12 @@ func (k *Keeper) WithChainID(ctx sdk.Context) {
 // ChainID returns the EIP155 chain ID for the EVM context
 func (k Keeper) ChainID() *big.Int {
 	return k.eip155ChainID
+}
+
+func (k *Keeper) InitChainer(ctx sdk.Context) {
+	if tracer := cosmostracing.GetTracingHooks(ctx); tracer != nil && tracer.OnBlockchainInit != nil {
+		tracer.OnBlockchainInit(types.DefaultChainConfig().EthereumConfig(k.ChainID()))
+	}
 }
 
 // ----------------------------------------------------------------------------
@@ -199,9 +204,9 @@ func (k *Keeper) PostTxProcessing(ctx sdk.Context, msg *core.Message, receipt *e
 	return k.hooks.PostTxProcessing(ctx, msg, receipt)
 }
 
-// Tracer return a default vm.Tracer based on current keeper state
-func (k Keeper) Tracer(msg *core.Message, rules params.Rules) *tracers.Tracer {
-	return types.NewTracer(k.tracer, msg, rules)
+// SetTracer should only be called during initialization
+func (k *Keeper) SetTracer(tracer *cosmostracing.Hooks) {
+	k.evmTracer = tracer
 }
 
 // GetAccount load nonce and codehash without balance,

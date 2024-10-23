@@ -16,16 +16,20 @@
 package types
 
 import (
+	"fmt"
 	"os"
-
-	"github.com/ethereum/go-ethereum/eth/tracers"
-	_ "github.com/ethereum/go-ethereum/eth/tracers/live"
-	"github.com/ethereum/go-ethereum/eth/tracers/logger"
 
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/eth/tracers"
+	"github.com/ethereum/go-ethereum/eth/tracers/logger"
 	"github.com/ethereum/go-ethereum/params"
+
+	// importing the tracers package automatically triggers its init method which
+	// registers the firehose tracer in the LiveDirectory
+	cosmostracers "github.com/evmos/ethermint/x/evm/tracers"
+	cosmostracing "github.com/evmos/ethermint/x/evm/tracing"
 )
 
 const (
@@ -33,6 +37,7 @@ const (
 	TracerJSON       = "json"
 	TracerStruct     = "struct"
 	TracerMarkdown   = "markdown"
+	Firehose         = "firehose"
 )
 
 // NewTracer creates a new Logger tracer to collect execution traces from an
@@ -56,12 +61,22 @@ func NewTracer(tracer string, msg *core.Message, rules params.Rules) *tracers.Tr
 	case TracerStruct:
 		hooks = logger.NewStructLogger(logCfg).Hooks()
 	default:
+		// Use noop tracer by default
 		hooks, _ = tracers.LiveDirectory.New("noop", nil)
 	}
 
 	return &tracers.Tracer{
 		Hooks: hooks,
 	}
+}
+
+func NewFirehoseCosmosLiveTracer() (*cosmostracing.Hooks, error) {
+	h, err := cosmostracers.NewCosmosFirehoseTracer(false)
+	if err != nil {
+		return nil, fmt.Errorf("initializing live tracer firehose: %w", err)
+	}
+
+	return h, nil
 }
 
 // TxTraceResult is the result of a single transaction trace during a block trace.

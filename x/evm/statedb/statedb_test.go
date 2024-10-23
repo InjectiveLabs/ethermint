@@ -2,7 +2,9 @@ package statedb_test
 
 import (
 	"errors"
+	"fmt"
 	"math/big"
+	"strings"
 	"testing"
 
 	"cosmossdk.io/log"
@@ -23,6 +25,7 @@ import (
 	capabilitytypes "github.com/cosmos/ibc-go/modules/capability/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/tracing"
+	ethtracing "github.com/ethereum/go-ethereum/core/tracing"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -30,7 +33,6 @@ import (
 	ethermint "github.com/evmos/ethermint/types"
 	evmkeeper "github.com/evmos/ethermint/x/evm/keeper"
 	"github.com/evmos/ethermint/x/evm/statedb"
-	"github.com/evmos/ethermint/x/evm/types"
 	evmtypes "github.com/evmos/ethermint/x/evm/types"
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"
@@ -45,8 +47,149 @@ var (
 	emptyTxConfig statedb.TxConfig = statedb.NewEmptyTxConfig(blockHash)
 )
 
+type balanceChange struct {
+	// We use string to avoid big.Int equality issues
+	old    string
+	new    string
+	reason ethtracing.BalanceChangeReason
+}
+
+func balanceChangesValues(changes []balanceChange) string {
+	out := make([]string, len(changes))
+	for i, change := range changes {
+		out[i] = fmt.Sprintf("{%q, %q, ethtracing.BalanceChangeReason(%d)}", change.old, change.new, change.reason)
+	}
+
+	return strings.Join(out, "\n")
+}
+
 type StateDBTestSuite struct {
 	suite.Suite
+}
+
+func (suite *StateDBTestSuite) TestTracer_Balance() {
+	testCases := []struct {
+		name              string
+		malleate          func(*statedb.StateDB)
+		expBalance        *big.Int
+		expBalanceChanges int
+	}{
+		{
+			name: "1 balance change - Add",
+			malleate: func(db *statedb.StateDB) {
+				db.AddBalance(address, uint256.NewInt(10), tracing.BalanceChangeUnspecified)
+			},
+			expBalance:        big.NewInt(10),
+			expBalanceChanges: 1,
+		},
+		{
+			name: "2 balance changes - Add and Sub",
+			malleate: func(db *statedb.StateDB) {
+				db.AddBalance(address, uint256.NewInt(10), tracing.BalanceChangeUnspecified)
+				// get dirty balance
+				suite.Require().Equal(uint256.NewInt(10), db.GetBalance(address))
+				db.SubBalance(address, uint256.NewInt(2), tracing.BalanceChangeUnspecified)
+			},
+			expBalance:        big.NewInt(8),
+			expBalanceChanges: 2,
+		},
+		{
+			name: "add zero balance",
+			malleate: func(db *statedb.StateDB) {
+				db.AddBalance(address, uint256.NewInt(0), tracing.BalanceChangeUnspecified)
+			},
+			expBalance:        big.NewInt(0),
+			expBalanceChanges: 0,
+		},
+		{
+			name: "sub zero balance",
+			malleate: func(db *statedb.StateDB) {
+				db.SubBalance(address, uint256.NewInt(0), tracing.BalanceChangeUnspecified)
+			},
+			expBalance:        big.NewInt(0),
+			expBalanceChanges: 0,
+		},
+		{
+			name: "transfer",
+			malleate: func(db *statedb.StateDB) {
+				db.AddBalance(address, uint256.NewInt(10), tracing.BalanceChangeUnspecified)
+				db.Transfer(address, address2, big.NewInt(10))
+				suite.Require().Equal(uint256.NewInt(10), db.GetBalance(address2))
+			},
+			expBalance:        big.NewInt(0),
+			expBalanceChanges: 3,
+		},
+		{
+			name: "multiple transfers",
+			malleate: func(db *statedb.StateDB) {
+				db.AddBalance(address, uint256.NewInt(10), tracing.BalanceChangeUnspecified)
+				db.AddBalance(address2, uint256.NewInt(10), tracing.BalanceChangeUnspecified)
+				db.Transfer(address, address2, big.NewInt(10))
+				db.Transfer(address2, address, big.NewInt(5))
+				suite.Require().Equal(uint256.NewInt(15), db.GetBalance(address2))
+			},
+			expBalance:        big.NewInt(5),
+			expBalanceChanges: 6,
+		},
+		{
+			name: "set balance",
+			malleate: func(db *statedb.StateDB) {
+				db.SetBalance(address, uint256.NewInt(10).ToBig())
+				suite.Require().Equal(uint256.NewInt(10), db.GetBalance(address))
+			},
+			expBalance:        big.NewInt(10),
+			expBalanceChanges: 1,
+		},
+		{
+			name: "multiple set balance",
+			malleate: func(db *statedb.StateDB) {
+				db.SetBalance(address, uint256.NewInt(10).ToBig())
+				db.SetBalance(address2, uint256.NewInt(10).ToBig())
+				suite.Require().Equal(uint256.NewInt(10), db.GetBalance(address))
+				suite.Require().Equal(uint256.NewInt(10), db.GetBalance(address2))
+			},
+			expBalance:        big.NewInt(10),
+			expBalanceChanges: 2,
+		},
+		{
+			name: "multiple set balance and some transfers",
+			malleate: func(db *statedb.StateDB) {
+				db.SetBalance(address, uint256.NewInt(10).ToBig())
+				db.SetBalance(address2, uint256.NewInt(10).ToBig())
+				db.Transfer(address, address2, big.NewInt(10))
+				db.Transfer(address2, address, big.NewInt(5))
+				suite.Require().Equal(uint256.NewInt(5), db.GetBalance(address))
+				suite.Require().Equal(uint256.NewInt(15), db.GetBalance(address2))
+			},
+			expBalance:        big.NewInt(5),
+			expBalanceChanges: 6,
+		},
+	}
+
+	for _, tc := range testCases {
+		suite.Run(tc.name, func() {
+			var balanceChanges []balanceChange
+			raw, ctx, keeper := setupTestEnv(suite.T())
+			t, err := evmtypes.NewFirehoseCosmosLiveTracer()
+			require.NoError(suite.T(), err)
+			t.OnBalanceChange = func(addr common.Address, prev, new *big.Int, reason ethtracing.BalanceChangeReason) {
+				balanceChanges = append(balanceChanges, balanceChange{prev.String(), new.String(), reason})
+			}
+			keeper.SetTracer(t)
+			db := statedb.New(ctx, keeper, emptyTxConfig)
+			db.SetTracer(t)
+			tc.malleate(db)
+
+			// check dirty state
+			suite.Require().Equal(uint256.MustFromBig(tc.expBalance), db.GetBalance(address))
+			suite.Require().NoError(db.Commit())
+
+			ctx, keeper = newTestKeeper(suite.T(), raw)
+			// check committed balance too
+			suite.Require().Equal(tc.expBalance, keeper.GetEVMDenomBalance(ctx, address))
+			suite.Require().Equal(tc.expBalanceChanges, len(balanceChanges))
+		})
+	}
 }
 
 func (suite *StateDBTestSuite) TestAccount() {
@@ -156,6 +299,54 @@ func (suite *StateDBTestSuite) TestAccountOverride() {
 	suite.Require().Equal(amount, db.GetBalance(address))
 	// but nonce is reset
 	suite.Require().Equal(uint64(0), db.GetNonce(address))
+}
+
+func (suite *StateDBTestSuite) TestTracer_Nonce() {
+	testCases := []struct {
+		name            string
+		malleate        func(*statedb.StateDB)
+		expNonceChanges int
+	}{
+		{
+			name: "set nonce to 1",
+			malleate: func(db *statedb.StateDB) {
+				db.SetNonce(address, 1)
+			},
+			expNonceChanges: 1,
+		},
+		{
+			name: "set nonce to 10",
+			malleate: func(db *statedb.StateDB) {
+				db.SetNonce(address, 10)
+			},
+			expNonceChanges: 1,
+		},
+		{
+			name: "multiple set nonces",
+			malleate: func(db *statedb.StateDB) {
+				db.SetNonce(address, 1)
+				db.SetNonce(address, 2)
+			},
+			expNonceChanges: 2,
+		},
+	}
+
+	for _, tc := range testCases {
+		suite.Run(tc.name, func() {
+			var nonceChanges []uint64
+			_, ctx, keeper := setupTestEnv(suite.T())
+			t, err := evmtypes.NewFirehoseCosmosLiveTracer()
+			require.NoError(suite.T(), err)
+			t.OnNonceChange = func(addr common.Address, prev, new uint64) {
+				nonceChanges = append(nonceChanges, new)
+			}
+			db := statedb.New(ctx, keeper, emptyTxConfig)
+			db.SetTracer(t)
+			tc.malleate(db)
+
+			suite.Require().Equal(tc.expNonceChanges, len(nonceChanges))
+		})
+	}
 }
 
 func (suite *StateDBTestSuite) TestDBError() {
@@ -321,6 +512,106 @@ func (suite *StateDBTestSuite) TestCode() {
 			suite.Require().Equal(tc.expCode, db.GetCode(address))
 			suite.Require().Equal(len(tc.expCode), db.GetCodeSize(address))
 			suite.Require().Equal(tc.expCodeHash, db.GetCodeHash(address))
+		})
+	}
+}
+
+type codeChange struct {
+	addr    string
+	oldCode string
+	newCode string
+}
+
+func newCodeChange(addr, oldCode, newCode string) codeChange {
+	return codeChange{
+		addr:    addr,
+		oldCode: oldCode,
+		newCode: newCode,
+	}
+}
+
+func (suite *StateDBTestSuite) TestTracer_Code() {
+	code := []byte("hello world")
+	code2 := []byte("hello world 2")
+	codeHash := crypto.Keccak256Hash(code)
+	code2Hash := crypto.Keccak256Hash(code2)
+
+	testCases := []struct {
+		name           string
+		malleate       func(vm.StateDB)
+		expCode        []byte
+		expCodeHash    common.Hash
+		expCodeChanges int
+	}{
+		{
+			name:           "non-exist account",
+			malleate:       func(vm.StateDB) {},
+			expCode:        nil,
+			expCodeHash:    common.Hash{},
+			expCodeChanges: 0,
+		},
+		{
+			name: "empty account",
+			malleate: func(db vm.StateDB) {
+				db.CreateAccount(address)
+			},
+			expCode:        nil,
+			expCodeHash:    common.BytesToHash(emptyCodeHash),
+			expCodeChanges: 0,
+		},
+		{
+			name: "set code",
+			malleate: func(db vm.StateDB) {
+				db.SetCode(address, code)
+			},
+			expCode:        code,
+			expCodeHash:    codeHash,
+			expCodeChanges: 1,
+		},
+		{
+			name: "set multiple code",
+			malleate: func(db vm.StateDB) {
+
+				db.SetCode(address, code)
+				db.SetCode(address, code2)
+			},
+			expCode:        code2,
+			expCodeHash:    code2Hash,
+			expCodeChanges: 2,
+		},
+	}
+
+	for _, tc := range testCases {
+		suite.Run(tc.name, func() {
+			var codeChanges []codeChange
+			raw, ctx, keeper := setupTestEnv(suite.T())
+			db := statedb.New(ctx, keeper, emptyTxConfig)
+			t, err := evmtypes.NewFirehoseCosmosLiveTracer()
+
+			t.OnCodeChange = func(addr common.Address, prevCodeHash common.Hash, prevCode []byte, codeHash common.Hash, code []byte) {
+				codeChanges = append(codeChanges, newCodeChange(addr.String(), string(prevCode), string(code)))
+			}
+
+			require.NoError(suite.T(), err)
+			db.SetTracer(t)
+			tc.malleate(db)
+
+			// check dirty state
+			suite.Require().Equal(tc.expCode, db.GetCode(address))
+			suite.Require().Equal(len(tc.expCode), db.GetCodeSize(address))
+			suite.Require().Equal(tc.expCodeHash, db.GetCodeHash(address))
+
+			suite.Require().NoError(db.Commit())
+
+			// check the committed state
+			ctx, keeper = newTestKeeper(suite.T(), raw)
+			db = statedb.New(ctx, keeper, emptyTxConfig)
+			suite.Require().Equal(tc.expCode, db.GetCode(address))
+			suite.Require().Equal(len(tc.expCode), db.GetCodeSize(address))
+			suite.Require().Equal(tc.expCodeHash, db.GetCodeHash(address))
+
+			// check code changes
+			suite.Require().Equal(tc.expCodeChanges, len(codeChanges))
 		})
 	}
 }
@@ -759,6 +1050,66 @@ func (suite *StateDBTestSuite) TestSetStorage() {
 	suite.Require().Equal(common.Hash{}, stateDB.GetState(contract, common.BigToHash(big.NewInt(2))))
 }
 
+type storageChanges struct {
+	address string
+	key     string
+	old     string
+	new     string
+}
+
+func newStorageChange(addr, key, old, new string) storageChanges {
+	return storageChanges{
+		address: addr,
+		key:     key,
+		old:     old,
+		new:     new,
+	}
+}
+
+func (suite *StateDBTestSuite) TestTracer_SetStorage() {
+	contract := common.BigToAddress(big.NewInt(101))
+
+	var sChanges []storageChanges
+
+	_, ctx, keeper := setupTestEnv(suite.T())
+	t, err := evmtypes.NewFirehoseCosmosLiveTracer()
+	require.NoError(suite.T(), err)
+	t.OnStorageChange = func(addr common.Address, slot common.Hash, prev, new common.Hash) {
+		sChanges = append(sChanges, newStorageChange(addr.String(), slot.String(), prev.String(), new.String()))
+	}
+	stateDB := statedb.New(ctx, keeper, emptyTxConfig)
+	stateDB.SetTracer(t)
+
+	stateDB.SetState(contract, common.BigToHash(big.NewInt(0)), common.BigToHash(big.NewInt(0)))
+	stateDB.SetState(contract, common.BigToHash(big.NewInt(1)), common.BigToHash(big.NewInt(1)))
+	stateDB.SetState(contract, common.BigToHash(big.NewInt(2)), common.BigToHash(big.NewInt(2)))
+	suite.Require().NoError(stateDB.Commit())
+	suite.Require().Equal(3, len(sChanges))
+
+	suite.Require().Equal(common.BigToHash(big.NewInt(0)), stateDB.GetState(contract, common.BigToHash(big.NewInt(0))))
+	suite.Require().Equal(common.BigToHash(big.NewInt(1)), stateDB.GetState(contract, common.BigToHash(big.NewInt(1))))
+	suite.Require().Equal(common.BigToHash(big.NewInt(2)), stateDB.GetState(contract, common.BigToHash(big.NewInt(2))))
+
+	// single change to the storage
+	stateDB.SetStorage(contract, map[common.Hash]common.Hash{
+		common.BigToHash(big.NewInt(1)): common.BigToHash(big.NewInt(3)),
+	})
+	suite.Require().Equal(4, len(sChanges))
+
+	suite.Require().Equal(common.Hash{}, stateDB.GetState(contract, common.BigToHash(big.NewInt(0))))
+	suite.Require().Equal(common.BigToHash(big.NewInt(3)), stateDB.GetState(contract, common.BigToHash(big.NewInt(1))))
+	suite.Require().Equal(common.Hash{}, stateDB.GetState(contract, common.BigToHash(big.NewInt(2))))
+
+	// multiple changes to the storage
+	stateDB.SetStorage(contract, map[common.Hash]common.Hash{
+		common.BigToHash(big.NewInt(2)): common.BigToHash(big.NewInt(3)),
+		common.BigToHash(big.NewInt(4)): common.BigToHash(big.NewInt(5)),
+		common.BigToHash(big.NewInt(6)): common.BigToHash(big.NewInt(7)),
+		common.BigToHash(big.NewInt(8)): common.BigToHash(big.NewInt(9)),
+	})
+	suite.Require().Equal(8, len(sChanges))
+}
+
 type StateDBWithForEachStorage interface {
 	ForEachStorage(common.Address, func(common.Hash, common.Hash) bool) error
 }
@@ -828,7 +1179,6 @@ func newTestKeeper(t *testing.T, cms storetypes.MultiStore) (sdk.Context, *evmke
 		appCodec,
 		testStoreKeys[evmtypes.StoreKey], testObjKeys[evmtypes.ObjectStoreKey], authtypes.NewModuleAddress(govtypes.ModuleName),
 		accountKeeper, bankKeeper, nil, nil,
-		"",
 		paramstypes.Subspace{},
 		nil,
 	)
@@ -856,7 +1206,7 @@ func setupTestEnv(t *testing.T) (storetypes.MultiStore, sdk.Context, *evmkeeper.
 
 	ctx, keeper := newTestKeeper(t, cms)
 	require.NoError(t, keeper.SetParams(ctx, evmtypes.Params{
-		EvmDenom: types.DefaultEVMDenom,
+		EvmDenom: evmtypes.DefaultEVMDenom,
 	}))
 	return cms, ctx, keeper
 }

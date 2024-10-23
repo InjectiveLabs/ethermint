@@ -6,6 +6,10 @@ import (
 	"math/big"
 	"testing"
 
+	"cosmossdk.io/core/comet"
+	"github.com/ethereum/go-ethereum/core/tracing"
+	cosmostracing "github.com/evmos/ethermint/x/evm/tracing"
+
 	sdkmath "cosmossdk.io/math"
 	storetypes "cosmossdk.io/store/types"
 	"github.com/cometbft/cometbft/crypto/tmhash"
@@ -615,7 +619,6 @@ func (suite *StateTransitionTestSuite) TestApplyMessage() {
 	chainCfg := keeperParams.ChainConfig.EthereumConfig(suite.App.EvmKeeper.ChainID())
 	rules := chainCfg.Rules(big.NewInt(suite.Ctx.BlockHeight()), chainCfg.MergeNetsplitBlock != nil, uint64(suite.Ctx.BlockHeader().Time.Unix()))
 	signer := ethtypes.LatestSignerForChainID(suite.App.EvmKeeper.ChainID())
-	tracer := suite.App.EvmKeeper.Tracer(msg, rules)
 	vmdb := suite.StateDB()
 
 	msg, err = newNativeMessage(
@@ -631,11 +634,161 @@ func (suite *StateTransitionTestSuite) TestApplyMessage() {
 	)
 	suite.Require().NoError(err)
 
+	tracer := types.NewTracer("", msg, rules)
+
 	res, err := suite.App.EvmKeeper.ApplyMessage(suite.Ctx, msg, tracer, true)
 
 	suite.Require().NoError(err)
 	suite.Require().Equal(expectedGasUsed, res.GasUsed)
 	suite.Require().False(res.Failed())
+}
+
+func (suite *StateTransitionTestSuite) TestApplyTransactionWithTracer() {
+	expectedGasUsed := params.TxGas
+	var msg *types.MsgEthereumTx
+
+	suite.SetupTest()
+	suite.Ctx = suite.Ctx.WithCometInfo(NewMockCometInfo())
+	suite.Ctx = suite.Ctx.WithConsensusParams(*testutil.DefaultConsensusParams)
+
+	t, err := types.NewFirehoseCosmosLiveTracer()
+	require.NoError(suite.T(), err)
+	suite.Ctx = cosmostracing.SetTracingHooks(suite.Ctx, t)
+	suite.App.EvmKeeper.SetTracer(t)
+
+	keeperParams := suite.App.EvmKeeper.GetParams(suite.Ctx)
+	chainCfg := keeperParams.ChainConfig.EthereumConfig(suite.App.EvmKeeper.ChainID())
+	signer := ethtypes.LatestSignerForChainID(suite.App.EvmKeeper.ChainID())
+	vmdb := suite.StateDB()
+
+	onCosmosTxStartHookCalled := false
+	onTxEndHookCalled := false
+
+	startTxHook := t.OnCosmosTxStart
+	endTxHook := t.OnTxEnd
+
+	t.OnCosmosTxStart = func(vm *tracing.VMContext, tx *ethtypes.Transaction, hash common.Hash, from common.Address) {
+		// call original hook
+		startTxHook(vm, tx, hash, from)
+		onCosmosTxStartHookCalled = true
+	}
+	t.OnTxEnd = func(receipt *ethtypes.Receipt, err error) {
+		// call original hook
+		endTxHook(receipt, err)
+		onTxEndHookCalled = true
+	}
+
+	// manually call on blockchain init
+	t.OnBlockchainInit(chainCfg)
+	suite.StateDB().SetTracer(t)
+
+	msg, _, err = newEthMsgTx(
+		vmdb.GetNonce(suite.Address),
+		suite.Address,
+		suite.Signer,
+		signer,
+		ethtypes.LegacyTxType,
+		nil,
+		nil,
+	)
+	suite.Require().NoError(err)
+
+	// manually call begin block
+	err = suite.App.EvmKeeper.BeginBlock(suite.Ctx)
+	suite.Require().NoError(err)
+
+	res, err := suite.App.EvmKeeper.ApplyTransaction(suite.Ctx, msg)
+
+	suite.Require().NoError(err)
+	suite.Require().Equal(expectedGasUsed, res.GasUsed)
+	suite.Require().False(res.Failed())
+
+	suite.Require().True(onCosmosTxStartHookCalled)
+	suite.Require().True(onTxEndHookCalled)
+}
+
+func (suite *StateTransitionTestSuite) TestApplyMessageWithConfigTracer() {
+	expectedGasUsed := params.TxGas
+	var msg *core.Message
+
+	suite.SetupTest()
+	suite.Ctx = suite.Ctx.WithCometInfo(NewMockCometInfo())
+	suite.Ctx = suite.Ctx.WithConsensusParams(*testutil.DefaultConsensusParams)
+
+	t, err := types.NewFirehoseCosmosLiveTracer()
+	require.NoError(suite.T(), err)
+	suite.Ctx = cosmostracing.SetTracingHooks(suite.Ctx, t)
+	suite.App.EvmKeeper.SetTracer(t)
+
+	cfgWithTracer, err := suite.App.EvmKeeper.EVMConfig(suite.Ctx, big.NewInt(9000), common.Hash{})
+	suite.Require().NoError(err)
+
+	keeperParams := suite.App.EvmKeeper.GetParams(suite.Ctx)
+	chainCfg := keeperParams.ChainConfig.EthereumConfig(suite.App.EvmKeeper.ChainID())
+	signer := ethtypes.LatestSignerForChainID(suite.App.EvmKeeper.ChainID())
+	vmdb := suite.StateDB()
+
+	onCosmosTxStartHookCalled := false
+	onGasChangedHookCalled := false
+	onEnterHookCalled := false
+	onExitHookCalled := false
+
+	startTxHook := t.OnCosmosTxStart
+	gasChangedHook := t.OnGasChange
+	enterHook := t.OnEnter
+	exitHook := t.OnExit
+
+	t.OnCosmosTxStart = func(vm *tracing.VMContext, tx *ethtypes.Transaction, hash common.Hash, from common.Address) {
+		// call original hook
+		startTxHook(vm, tx, hash, from)
+		onCosmosTxStartHookCalled = true
+	}
+	t.OnGasChange = func(old, new uint64, reason tracing.GasChangeReason) {
+		// call original hook
+		gasChangedHook(old, new, reason)
+		onGasChangedHookCalled = true
+	}
+	t.OnEnter = func(depth int, typ byte, from common.Address, to common.Address, input []byte, gas uint64, value *big.Int) {
+		// call original hook
+		enterHook(depth, typ, from, to, input, gas, value)
+		onEnterHookCalled = true
+	}
+	t.OnExit = func(depth int, output []byte, gasUsed uint64, err error, reverted bool) {
+		// call original hook
+		exitHook(depth, output, gasUsed, err, reverted)
+		onExitHookCalled = true
+	}
+
+	// manually call on blockchain init
+	t.OnBlockchainInit(chainCfg)
+	suite.StateDB().SetTracer(t)
+
+	msg, err = newNativeMessage(
+		vmdb.GetNonce(suite.Address),
+		suite.Ctx.BlockHeight(),
+		suite.Address,
+		chainCfg,
+		suite.Signer,
+		signer,
+		ethtypes.LegacyTxType,
+		nil,
+		nil,
+	)
+	suite.Require().NoError(err)
+
+	// manually call begin block
+	err = suite.App.EvmKeeper.BeginBlock(suite.Ctx)
+	suite.Require().NoError(err)
+	res, err := suite.App.EvmKeeper.ApplyMessageWithConfig(suite.Ctx, msg, cfgWithTracer, true)
+
+	suite.Require().NoError(err)
+	suite.Require().Equal(expectedGasUsed, res.GasUsed)
+	suite.Require().False(res.Failed())
+
+	suite.Require().True(onCosmosTxStartHookCalled)
+	suite.Require().True(onGasChangedHookCalled)
+	suite.Require().True(onEnterHookCalled)
+	suite.Require().True(onExitHookCalled)
 }
 
 func (suite *StateTransitionTestSuite) TestApplyMessageWithConfig() {
@@ -656,7 +809,7 @@ func (suite *StateTransitionTestSuite) TestApplyMessageWithConfig() {
 		expErr   bool
 	}{
 		{
-			"messsage applied ok",
+			"message applied ok",
 			func() {
 				msg, err = newNativeMessage(
 					vmdb.GetNonce(suite.Address),
@@ -718,6 +871,23 @@ func (suite *StateTransitionTestSuite) TestApplyMessageWithConfig() {
 			config.TxConfig = suite.App.EvmKeeper.TxConfig(suite.Ctx, common.Hash{})
 
 			tc.malleate()
+
+			if config.Tracer != nil {
+				config.Tracer.OnBlockStart(tracing.BlockEvent{
+					Block: ethtypes.NewBlockWithHeader(
+						&ethtypes.Header{
+							Number:     big.NewInt(suite.Ctx.BlockHeight()),
+							Time:       uint64(suite.Ctx.BlockHeader().Time.Unix()),
+							Difficulty: big.NewInt(0),
+						},
+					),
+					TD: big.NewInt(0),
+				})
+				defer func() {
+					config.Tracer.OnBlockEnd(nil)
+				}()
+			}
+
 			res, err := suite.App.EvmKeeper.ApplyMessageWithConfig(suite.Ctx, msg, config, true)
 
 			if tc.expErr {
@@ -770,4 +940,27 @@ func (suite *StateTransitionTestSuite) TestGetProposerAddress() {
 			suite.Require().Equal(tc.expAdr, keeper.GetProposerAddress(suite.Ctx, tc.adr))
 		})
 	}
+}
+
+type MockCometInfo struct {
+}
+
+func NewMockCometInfo() *MockCometInfo {
+	return &MockCometInfo{}
+}
+
+func (c *MockCometInfo) GetEvidence() comet.EvidenceList {
+	return nil
+}
+
+func (c *MockCometInfo) GetValidatorsHash() []byte {
+	return []byte{}
+}
+
+func (c *MockCometInfo) GetProposerAddress() []byte {
+	return []byte{}
+}
+
+func (c *MockCometInfo) GetLastCommit() comet.CommitInfo {
+	return nil
 }

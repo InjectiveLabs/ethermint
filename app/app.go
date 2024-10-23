@@ -115,7 +115,6 @@ import (
 	"github.com/cosmos/ibc-go/modules/capability"
 	capabilitykeeper "github.com/cosmos/ibc-go/modules/capability/keeper"
 	capabilitytypes "github.com/cosmos/ibc-go/modules/capability/types"
-
 	"github.com/cosmos/ibc-go/v8/modules/apps/transfer"
 	ibctransferkeeper "github.com/cosmos/ibc-go/v8/modules/apps/transfer/keeper"
 	ibctransfertypes "github.com/cosmos/ibc-go/v8/modules/apps/transfer/types"
@@ -126,7 +125,6 @@ import (
 	ibcexported "github.com/cosmos/ibc-go/v8/modules/core/exported"
 	ibckeeper "github.com/cosmos/ibc-go/v8/modules/core/keeper"
 	ibctm "github.com/cosmos/ibc-go/v8/modules/light-clients/07-tendermint"
-
 	"github.com/evmos/ethermint/client/docs"
 
 	"github.com/evmos/ethermint/app/ante"
@@ -138,6 +136,7 @@ import (
 	"github.com/evmos/ethermint/x/evm"
 	evmkeeper "github.com/evmos/ethermint/x/evm/keeper"
 	v0evmtypes "github.com/evmos/ethermint/x/evm/migrations/v0/types"
+	evmtracing "github.com/evmos/ethermint/x/evm/tracing"
 	evmtypes "github.com/evmos/ethermint/x/evm/types"
 	"github.com/evmos/ethermint/x/feemarket"
 	feemarketkeeper "github.com/evmos/ethermint/x/feemarket/keeper"
@@ -150,6 +149,7 @@ import (
 	// Force-load the tracer engines to trigger registration due to Go-Ethereum v1.10.15 changes
 	_ "github.com/ethereum/go-ethereum/eth/tracers/js"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/native"
+	ethparams "github.com/ethereum/go-ethereum/params"
 )
 
 func init() {
@@ -250,6 +250,8 @@ type EthermintApp struct {
 
 	// the configurator
 	configurator module.Configurator
+
+	evmTracer *evmtracing.Hooks
 }
 
 // NewEthermintApp returns a reference to a new initialized Ethermint application.
@@ -480,8 +482,6 @@ func NewEthermintApp(
 		authAddr,
 	)
 
-	tracer := cast.ToString(appOpts.Get(srvflags.EVMTracer))
-
 	// Create Ethermint keepers
 	feeMarketSs := app.GetSubspace(feemarkettypes.ModuleName)
 	app.FeeMarketKeeper = feemarketkeeper.NewKeeper(
@@ -497,7 +497,6 @@ func NewEthermintApp(
 		appCodec,
 		keys[evmtypes.StoreKey], okeys[evmtypes.ObjectStoreKey], authtypes.NewModuleAddress(govtypes.ModuleName),
 		app.AccountKeeper, app.BankKeeper, app.StakingKeeper, app.FeeMarketKeeper,
-		tracer,
 		evmSs,
 		nil,
 	)
@@ -799,6 +798,27 @@ func NewEthermintApp(
 	app.ScopedIBCKeeper = scopedIBCKeeper
 	app.ScopedTransferKeeper = scopedTransferKeeper
 
+	tracer := cast.ToString(appOpts.Get(srvflags.EVMTracer))
+
+	// Currently only the firehose live tracer is supported
+	if tracer == "firehose" {
+		liveTracer, err := evmtypes.NewFirehoseCosmosLiveTracer()
+		if err != nil {
+			panic(err)
+		}
+		app.EvmKeeper.SetTracer(liveTracer)
+		app.evmTracer = liveTracer
+	} else if tracer == "access_list" {
+		panic("access_list tracer is not supported")
+	} else if tracer != "" {
+		liveTracer := evmtypes.NewTracer(tracer, nil, ethparams.Rules{})
+		t := &evmtracing.Hooks{
+			Hooks: liveTracer.Hooks,
+		}
+		app.EvmKeeper.SetTracer(t)
+		app.evmTracer = t
+	}
+
 	return app
 }
 
@@ -846,6 +866,13 @@ func (app *EthermintApp) setPostHandler() {
 	app.SetPostHandler(postHandler)
 }
 
+func (app *EthermintApp) initializeEVM(ctx sdk.Context) {
+	if app.EvmKeeper != nil && app.EvmKeeper.ChainID() == nil {
+		app.EvmKeeper.WithChainID(ctx)
+		app.EvmKeeper.InitChainer(ctx)
+	}
+}
+
 // Name returns the name of the App
 func (app *EthermintApp) Name() string { return app.BaseApp.Name() }
 
@@ -856,11 +883,21 @@ func (app *EthermintApp) PreBlocker(ctx sdk.Context, _ *abci.RequestFinalizeBloc
 
 // BeginBlocker updates every begin block
 func (app *EthermintApp) BeginBlocker(ctx sdk.Context) (sdk.BeginBlock, error) {
+	if app.evmTracer != nil {
+		ctx = evmtracing.SetTracingHooks(ctx, app.evmTracer)
+	}
+
+	app.initializeEVM(ctx)
+
 	return app.ModuleManager.BeginBlock(ctx)
 }
 
 // EndBlocker updates every end block
 func (app *EthermintApp) EndBlocker(ctx sdk.Context) (sdk.EndBlock, error) {
+	if app.evmTracer != nil {
+		ctx = evmtracing.SetTracingHooks(ctx, app.evmTracer)
+	}
+
 	return app.ModuleManager.EndBlock(ctx)
 }
 
@@ -877,6 +914,13 @@ func (app *EthermintApp) InitChainer(ctx sdk.Context, req *abci.RequestInitChain
 	if err := app.UpgradeKeeper.SetModuleVersionMap(ctx, app.ModuleManager.GetVersionMap()); err != nil {
 		return nil, err
 	}
+
+	if app.evmTracer != nil {
+		ctx = evmtracing.SetTracingHooks(ctx, app.evmTracer)
+	}
+
+	app.initializeEVM(ctx)
+
 	return app.ModuleManager.InitGenesis(ctx, app.appCodec, genesisState)
 }
 

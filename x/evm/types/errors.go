@@ -50,6 +50,7 @@ const (
 	codeErrGasOverflow
 	codeErrInvalidAccount
 	codeErrInvalidGasLimit
+	codeErrConfigOverries
 )
 
 var ErrPostTxProcessing = errors.New("failed to execute post processing")
@@ -117,6 +118,8 @@ var (
 
 	// ErrInvalidGasLimit returns an error if gas limit value is invalid
 	ErrInvalidGasLimit = errorsmod.Register(ModuleName, codeErrInvalidGasLimit, "invalid gas limit")
+
+	ErrConfigOverrides = errorsmod.Register(ModuleName, codeErrConfigOverries, "failed to apply state override")
 )
 
 // VmError is an interface that represents a reverted or failed EVM execution.

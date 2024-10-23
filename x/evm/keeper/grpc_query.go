@@ -23,6 +23,8 @@ import (
 	"math/big"
 	"time"
 
+	cosmostracing "github.com/evmos/ethermint/x/evm/tracing"
+
 	"github.com/ethereum/go-ethereum/eth/tracers"
 	"github.com/ethereum/go-ethereum/eth/tracers/logger"
 
@@ -644,6 +646,7 @@ func (k *Keeper) prepareTrace(
 		overrides = traceConfig.Overrides.EthereumConfig(cfg.ChainConfig.ChainID)
 	}
 
+	// setup default tracer
 	logConfig := logger.Config{
 		EnableMemory:     traceConfig.EnableMemory,
 		DisableStorage:   traceConfig.DisableStorage,
@@ -653,7 +656,6 @@ func (k *Keeper) prepareTrace(
 		Limit:            int(traceConfig.Limit),
 		Overrides:        overrides,
 	}
-
 	logger := logger.NewStructLogger(&logConfig)
 	tracer = &tracers.Tracer{
 		Hooks:     logger.Hooks(),
@@ -661,17 +663,17 @@ func (k *Keeper) prepareTrace(
 		Stop:      logger.Stop,
 	}
 
-	txIndex, err := ethermint.SafeInt(txConfig.TxIndex)
-	if err != nil {
-		return nil, 0, status.Error(codes.Internal, err.Error())
-	}
-
-	tCtx := &tracers.Context{
-		BlockHash: txConfig.BlockHash,
-		TxIndex:   txIndex,
-		TxHash:    txConfig.TxHash,
-	}
+	// override default tracer if traceConfig.Tracer is set
 	if traceConfig.Tracer != "" {
+		txIndex, err := ethermint.SafeInt(txConfig.TxIndex)
+		if err != nil {
+			return nil, 0, status.Error(codes.Internal, err.Error())
+		}
+		tCtx := &tracers.Context{
+			BlockHash: txConfig.BlockHash,
+			TxIndex:   txIndex,
+			TxHash:    txConfig.TxHash,
+		}
 		var cfg json.RawMessage
 		if traceConfig.TracerJsonConfig != "" {
 			cfg = json.RawMessage(traceConfig.TracerJsonConfig)
@@ -719,7 +721,9 @@ func (k *Keeper) prepareTrace(
 		cfg.BlockOverrides = &blockOverrides
 	}
 
-	cfg.Tracer = tracer
+	cfg.Tracer = &cosmostracing.Hooks{
+		Hooks: tracer.Hooks,
+	}
 	cfg.DebugTrace = true
 	res, err := k.ApplyMessageWithConfig(ctx, msg, cfg, commitMessage)
 	if err != nil {

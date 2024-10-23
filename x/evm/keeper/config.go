@@ -18,11 +18,12 @@ package keeper
 import (
 	"math/big"
 
+	cosmostracing "github.com/evmos/ethermint/x/evm/tracing"
+
 	errorsmod "cosmossdk.io/errors"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/eth/tracers"
 	"github.com/ethereum/go-ethereum/params"
 	rpctypes "github.com/evmos/ethermint/rpc/types"
 	"github.com/evmos/ethermint/x/evm/statedb"
@@ -53,7 +54,7 @@ type EVMBlockConfig struct {
 type EVMConfig struct {
 	*EVMBlockConfig
 	TxConfig       statedb.TxConfig
-	Tracer         *tracers.Tracer
+	Tracer         *cosmostracing.Hooks
 	DebugTrace     bool
 	Overrides      *rpctypes.StateOverride
 	BlockOverrides *rpctypes.BlockOverrides
@@ -126,10 +127,13 @@ func (k *Keeper) EVMConfig(ctx sdk.Context, chainID *big.Int, txHash common.Hash
 		txConfig = k.TxConfig(ctx, txHash)
 	}
 
-	return &EVMConfig{
+	cfg := &EVMConfig{
 		EVMBlockConfig: blockCfg,
 		TxConfig:       txConfig,
-	}, nil
+		Tracer:         k.evmTracer,
+	}
+
+	return cfg, nil
 }
 
 // TxConfig loads `TxConfig` from current transient storage
@@ -149,9 +153,14 @@ func (k Keeper) VMConfig(ctx sdk.Context, cfg *EVMConfig) vm.Config {
 		noBaseFee = cfg.FeeMarketParams.NoBaseFee
 	}
 
-	return vm.Config{
-		Tracer:    cfg.Tracer.Hooks,
+	vmCfg := vm.Config{
 		NoBaseFee: noBaseFee,
 		ExtraEips: cfg.Params.EIPs(),
 	}
+
+	if vmCfg.Tracer == nil && cfg.Tracer != nil && cfg.Tracer.Hooks != nil {
+		vmCfg.Tracer = cfg.Tracer.Hooks
+	}
+
+	return vmCfg
 }
