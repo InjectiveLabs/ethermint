@@ -41,8 +41,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 )
 
-var ErrConfigOverrides = errors.New("failed to apply state override")
-
 // NewEVM generates a go-ethereum VM from the provided Message fields and the chain parameters
 // (ChainConfig and module Params). It additionally sets the validator operator address as the
 // coinbase address to make it available for the COINBASE opcode, even though there is no
@@ -192,7 +190,7 @@ func (k *Keeper) ApplyTransaction(ctx sdk.Context, msgEth *types.MsgEthereumTx) 
 	if applyMessageErr != nil {
 
 		// Any of these errors will not impact the evm state / execution flow
-		if errorsmod.IsOf(applyMessageErr, types.ErrCreateDisabled, types.ErrCallDisabled, ErrConfigOverrides) {
+		if errorsmod.IsOf(applyMessageErr, types.ErrCreateDisabled, types.ErrCallDisabled, types.ErrConfigOverrides) {
 			return nil, errorsmod.Wrap(applyMessageErr, "failed to apply ethereum core message, issue with create, call or config overrides")
 		}
 
@@ -353,7 +351,7 @@ func (k *Keeper) ApplyMessageWithConfig(
 	var evm *vm.EVM
 	if cfg.Overrides != nil {
 		if err := cfg.Overrides.Apply(stateDB); err != nil {
-			return nil, errorsmod.Wrap(ErrConfigOverrides, err.Error())
+			return nil, errorsmod.Wrap(types.ErrConfigOverrides, err.Error())
 		}
 	}
 
