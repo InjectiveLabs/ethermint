@@ -866,6 +866,13 @@ func (app *EthermintApp) setPostHandler() {
 	app.SetPostHandler(postHandler)
 }
 
+func (app *EthermintApp) initializeEVM(ctx sdk.Context) {
+	if app.EvmKeeper != nil && app.EvmKeeper.ChainID() == nil {
+		app.EvmKeeper.WithChainID(ctx)
+		app.EvmKeeper.InitChainer(ctx)
+	}
+}
+
 // Name returns the name of the App
 func (app *EthermintApp) Name() string { return app.BaseApp.Name() }
 
@@ -880,12 +887,7 @@ func (app *EthermintApp) BeginBlocker(ctx sdk.Context) (sdk.BeginBlock, error) {
 		ctx = evmtracing.SetTracingHooks(ctx, app.evmTracer)
 	}
 
-	// Cosmos chains will only call InitChainer when the chain either starts
-	// from genesis or is being upgraded and a full state initialization is needed
-	if app.EvmKeeper != nil && app.EvmKeeper.ChainID() == nil {
-		app.EvmKeeper.WithChainID(ctx)
-		app.EvmKeeper.InitChainer(ctx)
-	}
+	app.initializeEVM(ctx)
 
 	return app.ModuleManager.BeginBlock(ctx)
 }
@@ -917,10 +919,7 @@ func (app *EthermintApp) InitChainer(ctx sdk.Context, req *abci.RequestInitChain
 		ctx = evmtracing.SetTracingHooks(ctx, app.evmTracer)
 	}
 
-	if app.EvmKeeper != nil {
-		app.EvmKeeper.WithChainID(ctx)
-		app.EvmKeeper.InitChainer(ctx)
-	}
+	app.initializeEVM(ctx)
 
 	return app.ModuleManager.InitGenesis(ctx, app.appCodec, genesisState)
 }
