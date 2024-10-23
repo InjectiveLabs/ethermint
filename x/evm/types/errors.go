@@ -49,7 +49,7 @@ const (
 	codeErrGasOverflow
 	codeErrInvalidAccount
 	codeErrInvalidGasLimit
-	codeErrConfigOverries
+	codeErrConfigOverrides
 )
 
 var ErrPostTxProcessing = errors.New("failed to execute post processing")
@@ -118,7 +118,7 @@ var (
 	// ErrInvalidGasLimit returns an error if gas limit value is invalid
 	ErrInvalidGasLimit = errorsmod.Register(ModuleName, codeErrInvalidGasLimit, "invalid gas limit")
 
-	ErrConfigOverrides = errorsmod.Register(ModuleName, codeErrConfigOverries, "failed to apply state override")
+	ErrConfigOverrides = errorsmod.Register(ModuleName, codeErrConfigOverrides, "failed to apply state override")
 )
 
 // NewExecErrorWithReason unpacks the revert return bytes and returns a wrapped error
