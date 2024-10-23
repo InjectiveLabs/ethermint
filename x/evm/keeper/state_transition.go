@@ -426,12 +426,6 @@ func (k *Keeper) ApplyMessageWithConfig(
 		stateDB.SetNonce(sender.Address(), msg.Nonce+1)
 	} else {
 		ret, leftoverGas, vmErr = evm.Call(sender, *msg.To, msg.Data, leftoverGas, uint256.MustFromBig(msg.Value))
-
-		// if they do not want to make the nonce set to the statedb or do we want to manually call the onNonceChange hook
-		//stateDB.SetNonce(sender.Address(), msg.Nonce+1)
-		if cfg.Tracer != nil && cfg.Tracer.OnNonceChange != nil {
-			cfg.Tracer.OnNonceChange(sender.Address(), msg.Nonce, msg.Nonce+1)
-		}
 	}
 
 	refundQuotient := params.RefundQuotient
