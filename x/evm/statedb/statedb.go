@@ -437,32 +437,34 @@ func (s *StateDB) Transfer(sender, recipient common.Address, amount *big.Int) {
 		panic("negative amount")
 	}
 
+	// collect balance changes only if tracer is active to reduce reads to StateDB
+	if s.evmTracer != nil && s.evmTracer.OnBalanceChange != nil {
+		oldSenderBalance := s.GetBalance(sender)
+		oldRecipientBalance := s.GetBalance(recipient)
+		defer func() {
+			if s.err == nil {
+				// sender
+				newSenderBalance := new(big.Int)
+				newSenderBalance.Sub(oldSenderBalance.ToBig(), amount)
+				s.evmTracer.OnBalanceChange(common.BytesToAddress(sender.Bytes()), oldSenderBalance.ToBig(), newSenderBalance, tracing.BalanceChangeTransfer)
+
+				// recipient
+				newRecipientBalance := new(big.Int)
+				newRecipientBalance.Add(oldRecipientBalance.ToBig(), amount)
+				s.evmTracer.OnBalanceChange(common.BytesToAddress(recipient.Bytes()), oldRecipientBalance.ToBig(), newRecipientBalance, tracing.BalanceChangeTransfer)
+			}
+		}()
+	}
+
 	coins := sdk.NewCoins(sdk.NewCoin(s.evmDenom, sdkmath.NewIntFromBigIntMut(amount)))
 	senderAddr := sdk.AccAddress(sender.Bytes())
-	senderBalance := s.GetBalance(sender)
 	recipientAddr := sdk.AccAddress(recipient.Bytes())
-	recipientBalance := s.GetBalance(recipient)
 	if err := s.ExecuteNativeAction(common.Address{}, nil, func(ctx sdk.Context) error {
 		return s.keeper.Transfer(ctx, senderAddr, recipientAddr, coins)
 	}); err != nil {
 		s.err = err
 	}
 
-	if s.err == nil {
-		// sender
-		if s.evmTracer != nil && s.evmTracer.OnBalanceChange != nil {
-			newBalance := new(big.Int)
-			newBalance.Sub(senderBalance.ToBig(), amount)
-			s.evmTracer.OnBalanceChange(common.BytesToAddress(sender.Bytes()), senderBalance.ToBig(), newBalance, tracing.BalanceChangeTransfer)
-		}
-
-		// recipient
-		if s.evmTracer != nil && s.evmTracer.OnBalanceChange != nil {
-			newBalance := new(big.Int)
-			newBalance.Add(recipientBalance.ToBig(), amount)
-			s.evmTracer.OnBalanceChange(common.BytesToAddress(recipient.Bytes()), recipientBalance.ToBig(), newBalance, tracing.BalanceChangeTransfer)
-		}
-	}
 }
 
 // AddBalance adds amount to the account associated with addr.
@@ -474,7 +476,18 @@ func (s *StateDB) AddBalance(addr common.Address, amount *uint256.Int, reason tr
 		panic("negative amount")
 	}
 
-	balance := s.GetBalance(addr)
+	// collect balance changes only if tracer is active to reduce reads to StateDB
+	if s.evmTracer != nil && s.evmTracer.OnBalanceChange != nil {
+		oldBalance := s.GetBalance(addr)
+		defer func() {
+			if s.err == nil {
+				newBalance := new(big.Int)
+				newBalance.Add(oldBalance.ToBig(), amount.ToBig())
+				s.evmTracer.OnBalanceChange(addr, oldBalance.ToBig(), newBalance, reason)
+			}
+		}()
+	}
+
 	coins := sdk.Coins{sdk.NewCoin(s.evmDenom, sdkmath.NewIntFromBigInt(amount.ToBig()))}
 	if err := s.ExecuteNativeAction(common.Address{}, nil, func(ctx sdk.Context) error {
 		return s.keeper.AddBalance(ctx, addr.Bytes(), coins)
@@ -482,13 +495,6 @@ func (s *StateDB) AddBalance(addr common.Address, amount *uint256.Int, reason tr
 		s.err = err
 	}
 
-	if s.err == nil {
-		if s.evmTracer != nil && s.evmTracer.OnBalanceChange != nil {
-			newBalance := new(big.Int)
-			newBalance.Add(balance.ToBig(), amount.ToBig())
-			s.evmTracer.OnBalanceChange(addr, balance.ToBig(), newBalance, reason)
-		}
-	}
 }
 
 // SubBalance subtracts amount from the account associated with addr.
@@ -500,7 +506,16 @@ func (s *StateDB) SubBalance(addr common.Address, amount *uint256.Int, reason tr
 		panic("negative amount")
 	}
 
-	balance := s.GetBalance(addr)
+	// collect balance changes only if tracer is active to reduce reads to StateDB
+	if s.evmTracer != nil && s.evmTracer.OnBalanceChange != nil {
+		oldBalance := s.GetBalance(addr)
+		if s.err == nil {
+			newBalance := new(big.Int)
+			newBalance.Sub(oldBalance.ToBig(), amount.ToBig())
+			s.evmTracer.OnBalanceChange(addr, oldBalance.ToBig(), newBalance, reason)
+		}
+	}
+
 	coins := sdk.Coins{sdk.NewCoin(s.evmDenom, sdkmath.NewIntFromBigInt(amount.ToBig()))}
 	if err := s.ExecuteNativeAction(common.Address{}, nil, func(ctx sdk.Context) error {
 		return s.keeper.SubBalance(ctx, addr.Bytes(), coins)
@@ -508,28 +523,23 @@ func (s *StateDB) SubBalance(addr common.Address, amount *uint256.Int, reason tr
 		s.err = err
 	}
 
-	if s.err == nil {
-		if s.evmTracer != nil && s.evmTracer.OnBalanceChange != nil {
-			newBalance := new(big.Int)
-			newBalance.Sub(balance.ToBig(), amount.ToBig())
-			s.evmTracer.OnBalanceChange(addr, balance.ToBig(), newBalance, reason)
-		}
-	}
 }
 
 // SetBalance is called by state override
 func (s *StateDB) SetBalance(addr common.Address, amount *big.Int) {
-	balance := s.GetBalance(addr)
+	// collect balance changes only if tracer is active to reduce reads to
+	// StateDB
+	if s.evmTracer != nil && s.evmTracer.OnBalanceChange != nil {
+		oldBalance := s.GetBalance(addr)
+		if s.err == nil {
+			s.evmTracer.OnBalanceChange(addr, oldBalance.ToBig(), amount, tracing.BalanceChangeUnspecified)
+		}
+	}
+
 	if err := s.ExecuteNativeAction(common.Address{}, nil, func(ctx sdk.Context) error {
 		return s.keeper.SetBalance(ctx, addr, amount, s.evmDenom)
 	}); err != nil {
 		s.err = err
-	}
-
-	if s.err == nil {
-		if s.evmTracer != nil && s.evmTracer.OnBalanceChange != nil {
-			s.evmTracer.OnBalanceChange(addr, balance.ToBig(), amount, tracing.BalanceChangeUnspecified)
-		}
 	}
 }
 
