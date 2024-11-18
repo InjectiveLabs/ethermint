@@ -198,17 +198,18 @@ func (args *TransactionArgs) ToMessage(globalGasCap uint64, baseFee *big.Int) (*
 	}
 
 	msg := &core.Message{
-		From:              addr,
-		To:                args.To,
-		Nonce:             nonce,
-		Value:             value,
-		GasLimit:          gas,
-		GasPrice:          gasPrice,
-		GasFeeCap:         gasFeeCap,
-		GasTipCap:         gasTipCap,
-		Data:              data,
-		AccessList:        accessList,
-		SkipAccountChecks: true,
+		From:             addr,
+		To:               args.To,
+		Nonce:            nonce,
+		Value:            value,
+		GasLimit:         gas,
+		GasPrice:         gasPrice,
+		GasFeeCap:        gasFeeCap,
+		GasTipCap:        gasTipCap,
+		Data:             data,
+		AccessList:       accessList,
+		SkipNonceChecks:  true,
+		SkipFromEOACheck: true,
 	}
 	return msg, nil
 }

@@ -134,7 +134,7 @@ func Test_TypesHeader_AllConsensusFieldsAreKnown(t *testing.T) {
 	// When adding support for a new hard-fork that adds new block header fields, it's normal that this value
 	// changes. If you are sure the two struct are the same, then you can update the expected hash below
 	// to the new value.
-	expectedHash := common.HexToHash("5341947c531e5c9cf38202784b16ac66484fe1838aa6e825436b22321b927296")
+	expectedHash := common.HexToHash("4ced4916132bbf6a7819a310bbac4abf354062a00efc980ea4f0bab406546ac5")
 
 	gethHeaderValue := reflect.New(gethHeaderType)
 	fillAllFieldsWithNonEmptyValues(t, gethHeaderValue, reflect.VisibleFields(gethHeaderType))
